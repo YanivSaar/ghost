@@ -35,11 +35,17 @@ jobs:
         run: |
           tag="${{ inputs.tag || github.ref_name }}"
           version="${tag#v}"
-          cargo_version=$(grep -m1 '^version' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          # Resolve ghost's actual package version through cargo rather
+          # than a line-order grep on Cargo.toml, so adding a crate-level
+          # [package] above [workspace.package] can't silently mislead
+          # verify-version. --no-deps skips lock resolution so a stale
+          # Cargo.lock can't shadow the manifest.
+          cargo_version=$(cargo metadata --format-version=1 --no-deps \
+            | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="ghost"))')
           echo "tag=$tag"           >> "$GITHUB_OUTPUT"
           echo "version=$version"   >> "$GITHUB_OUTPUT"
           if [ "$version" != "$cargo_version" ]; then
-            echo "::error::Tag $tag ($version) does not match workspace version $cargo_version"
+            echo "::error::Tag $tag ($version) does not match ghost package version $cargo_version"
             exit 1
           fi
 
@@ -74,8 +80,16 @@ jobs:
       - name: Install LLVM for bpf-linker
         run: ./.github/scripts/install-llvm.sh
 
+      # Cache before the expensive bpf-linker build so llvm-sys's native
+      # build is reused across runs.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
       - name: Install bpf-linker
         run: |
+          # Always pin the LLVM feature explicitly — see ci.yml for why
+          # the 0.10+ default (newest supported LLVM) isn't safe.
           if [[ "$BPF_LINKER_VERSION" == 0.9.* ]]; then
             cargo install bpf-linker --locked \
               --version "$BPF_LINKER_VERSION" \
@@ -83,12 +97,10 @@ jobs:
               --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
           else
             cargo install bpf-linker --locked \
-              --version "$BPF_LINKER_VERSION"
+              --version "$BPF_LINKER_VERSION" \
+              --no-default-features \
+              --features "$BPF_LINKER_LLVM_FEATURE"
           fi
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: release-${{ matrix.target }}
 
       - name: Build release
         run: |

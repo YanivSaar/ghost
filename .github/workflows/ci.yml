@@ -33,11 +33,17 @@ jobs:
       - name: Install LLVM for bpf-linker
         run: ./.github/scripts/install-llvm.sh
 
+      # Cache cargo registry/target before the expensive bpf-linker build
+      # so llvm-sys's native build is reused across runs.
+      - uses: Swatinem/rust-cache@v2
+
       - name: Install bpf-linker
         run: |
-          # 0.9.x shipped --features gating; 0.10+ makes the LLVM
-          # feature the crate's default and dropped the gating subset,
-          # so --no-default-features isn't needed (and would break).
+          # Always pin the LLVM feature explicitly. The default feature for
+          # 0.10+ is the crate's newest supported LLVM, which may be ahead
+          # of what we installed (e.g. 0.11.1 defaults to llvm-23 but we're
+          # on LLVM 21/22). 0.9.x additionally needs rustc-build-sysroot
+          # and --no-default-features for the --features flag to apply.
           if [[ "$BPF_LINKER_VERSION" == 0.9.* ]]; then
             cargo install bpf-linker --locked \
               --version "$BPF_LINKER_VERSION" \
@@ -45,10 +51,10 @@ jobs:
               --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
           else
             cargo install bpf-linker --locked \
-              --version "$BPF_LINKER_VERSION"
+              --version "$BPF_LINKER_VERSION" \
+              --no-default-features \
+              --features "$BPF_LINKER_LLVM_FEATURE"
           fi
-
-      - uses: Swatinem/rust-cache@v2
 
       - name: rustfmt
         run: cargo fmt --all -- --check
