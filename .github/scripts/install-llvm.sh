@@ -32,20 +32,30 @@ install_debian_like() {
         build-essential pkg-config libelf-dev curl ca-certificates gnupg lsb-release
     local tmp
     tmp="$(mktemp)"
-    trap 'rm -f "$tmp"' RETURN
+    # EXIT trap (set at script scope below) survives set -e aborts; a
+    # RETURN trap would only fire on normal function return.
+    DEBIAN_TMP="$tmp"
     curl -fsSL https://apt.llvm.org/llvm.sh -o "$tmp"
     chmod +x "$tmp"
     # `all` pulls clang/lld/dev/libs together.
     sudo_or_not "$tmp" "$LLVM_VERSION" all
 }
 
+# Clean up any temp files any installer created, even on set -e abort.
+DEBIAN_TMP=""
+cleanup_tmp() { [ -n "${DEBIAN_TMP:-}" ] && rm -f "$DEBIAN_TMP" || true; }
+trap cleanup_tmp EXIT
+
 install_rhel_like() {
+    # Version every clang/llvm/lld piece so a system install of a
+    # different LLVM major doesn't poison PATH or libclang discovery.
     sudo_or_not dnf install -y \
         make gcc pkgconfig elfutils-libelf-devel \
-        "clang-tools-extra" "llvm${LLVM_VERSION}" "llvm${LLVM_VERSION}-devel" \
+        "clang-tools-extra-${LLVM_VERSION}" \
+        "llvm${LLVM_VERSION}" "llvm${LLVM_VERSION}-devel" \
         "clang${LLVM_VERSION}" "clang${LLVM_VERSION}-devel" "lld${LLVM_VERSION}" \
         || sudo_or_not dnf install -y make gcc pkgconfig elfutils-libelf-devel \
-            llvm llvm-devel clang clang-devel lld
+            llvm llvm-devel clang clang-devel clang-tools-extra lld
 }
 
 install_arch_like() {
@@ -84,12 +94,14 @@ find_llvm_config() {
             if [ "$v" = "$LLVM_VERSION" ]; then echo "$c"; return 0; fi
         fi
     done
-    # Last resort: scan standard install roots.
+    # Last resort: scan standard install roots. Compare the major
+    # field (cut on '.') rather than byte-prefixing — the latter breaks
+    # for single-digit majors ("9.0.1" → "9." which doesn't match "9").
     local root
     for root in /usr /usr/local /opt; do
         local hit
         hit="$(find "$root" -maxdepth 5 -type f -name 'llvm-config*' 2>/dev/null \
-               | xargs -I{} sh -c '"$1" --version 2>/dev/null | head -c 2 | grep -qx "'"$LLVM_VERSION"'" && echo "$1"' _ {} \
+               | xargs -I{} sh -c '"$1" --version 2>/dev/null | cut -d. -f1 | grep -qx "'"$LLVM_VERSION"'" && echo "$1"' _ {} \
                | head -n 1 || true)"
         [ -n "$hit" ] && { echo "$hit"; return 0; }
     done

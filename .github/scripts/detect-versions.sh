@@ -21,10 +21,10 @@ LLVM_MAJOR="$(rustc -Vv | awk '/^LLVM version:/ { print $3 }' | cut -d. -f1)"
 : "${LLVM_MAJOR:?could not detect LLVM major from rustc -Vv}"
 
 # bpf-linker version → (llvm majors it supports via cargo features)
-#   0.9.15 : 19, 20, 21
+#   0.9.15 : 19, 20
 #   0.10.4 : 20, 21, 22
 #   0.11.1 : 21, 22, 23
-#   0.12.0 : 21, 22, 23
+#   0.12.0 : 21, 22, 23 (default = 23)
 case "$LLVM_MAJOR" in
     19) BPF_LINKER_VERSION="0.9.15"  ;;
     20) BPF_LINKER_VERSION="0.10.4"  ;;
