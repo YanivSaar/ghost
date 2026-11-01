@@ -10,6 +10,8 @@
 #   GHOST_PREFIX    install prefix        (default: /usr/local)
 #   GHOST_NO_CAPS   set to 1 to skip setcap
 #   GHOST_REPO      override the GitHub repo (default: YanivSaar/ghost)
+#   GHOST_YES       set to 1 to auto-confirm overwrite of an existing install
+#   GHOST_FORCE     set to 1 to reinstall even if the same version is present
 
 set -euo pipefail
 
@@ -45,6 +47,52 @@ else
   TAG="$VERSION"
 fi
 VER="${TAG#v}"
+say "Latest release is ${TAG} (${TARGET})"
+
+# Detect an existing install and ask before overwriting it.
+EXISTING_BIN=""
+if command -v ghost >/dev/null 2>&1; then
+  EXISTING_BIN="$(command -v ghost)"
+elif [ -x "${BIN_DIR}/ghost" ]; then
+  EXISTING_BIN="${BIN_DIR}/ghost"
+fi
+
+if [ -n "$EXISTING_BIN" ]; then
+  EXISTING_VER="$("$EXISTING_BIN" --version 2>/dev/null | awk '{print $NF}' || true)"
+  EXISTING_VER="${EXISTING_VER:-unknown}"
+  say "Existing install: ${EXISTING_BIN} (version ${EXISTING_VER})"
+
+  if [ "$EXISTING_VER" = "$VER" ] && [ -z "${GHOST_FORCE:-}" ]; then
+    say "Already on ${TAG}. Nothing to do. (set GHOST_FORCE=1 to reinstall.)"
+    exit 0
+  fi
+
+  if [ "${GHOST_YES:-}" = "1" ]; then
+    REPLY="y"
+  elif [ -r /dev/tty ]; then
+    printf '\033[1;33m??\033[0m  Replace %s (%s) with %s? [y/N] ' \
+      "$EXISTING_BIN" "$EXISTING_VER" "$TAG" > /dev/tty
+    read -r REPLY < /dev/tty || REPLY=""
+  else
+    die "existing install detected and no TTY to confirm — re-run with GHOST_YES=1 to proceed"
+  fi
+
+  case "${REPLY:-}" in
+    y|Y|yes|YES)
+      say "Removing ${EXISTING_BIN}"
+      rm -f "$EXISTING_BIN" || die "could not remove ${EXISTING_BIN}"
+      # If `which ghost` resolved to a different prefix than the one we're
+      # about to install into, clean that one too so the new install wins.
+      if [ "$EXISTING_BIN" != "${BIN_DIR}/ghost" ] && [ -e "${BIN_DIR}/ghost" ]; then
+        rm -f "${BIN_DIR}/ghost"
+      fi
+      ;;
+    *)
+      die "aborted by user — existing install left in place"
+      ;;
+  esac
+fi
+
 say "Installing ghost ${TAG} for ${TARGET}"
 
 ASSET="ghost-${TAG}-${TARGET}.tar.gz"

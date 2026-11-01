@@ -73,6 +73,12 @@ Environment overrides:
 | `GHOST_VERSION` | `latest`       | pin a release, e.g. `v0.1.3`              |
 | `GHOST_PREFIX`  | `/usr/local`   | install prefix (`$PREFIX/bin/ghost`)      |
 | `GHOST_NO_CAPS` | *(unset)*      | set to `1` to skip `setcap`               |
+| `GHOST_YES`     | *(unset)*      | set to `1` to auto-confirm overwrite of an existing install |
+| `GHOST_FORCE`   | *(unset)*      | set to `1` to reinstall even if the same version is already present |
+
+The installer always resolves the latest tagged release at run time. If
+`ghost` is already installed it reports the current version and prompts
+before replacing it; a same-version install is a no-op unless `GHOST_FORCE=1`.
 
 Supported targets: `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`.
 
