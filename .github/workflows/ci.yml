@@ -17,26 +17,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps (LLVM + build tools)
-        run: |
-          sudo apt-get update
-          # llvm-18-dev brings libLLVM and llvm-config-18 which the
-          # llvm-sys build script (pulled in by bpf-linker) needs.
-          sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libelf-dev \
-            clang-18 lld-18 llvm-18 llvm-18-dev libclang-18-dev libpolly-18-dev
-          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
-          echo "LLVM_SYS_181_PREFIX=/usr/lib/llvm-18" >> "$GITHUB_ENV"
-          # bpf-linker's build.rs searches /usr/lib64 or /usr/lib for
-          # libLLVM.so and ignores LLVM_SYS_*. On Ubuntu, llvm-18-dev
-          # puts the lib at /usr/lib/llvm-18/lib/; symlink it where
-          # bpf-linker will find it. ldconfig makes it findable at
-          # runtime for the linked bpf-linker binary.
-          sudo mkdir -p /usr/lib64
-          sudo ln -sf /usr/lib/llvm-18/lib/libLLVM.so   /usr/lib64/libLLVM.so
-          sudo ln -sf /usr/lib/llvm-18/lib/libLLVM.so.1 /usr/lib64/libLLVM.so.1 || true
-          echo "/usr/lib/llvm-18/lib" | sudo tee /etc/ld.so.conf.d/llvm-18.conf
-          sudo ldconfig
+      - name: Install build tools + LLVM for bpf-linker
+        env:
+          # bpf-linker's required LLVM major version. Bump this when
+          # bpf-linker bumps its llvm-sys dep.
+          LLVM_VERSION: "19"
+        run: ./.github/scripts/install-llvm.sh
 
       - name: Install Rust toolchain (from rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@nightly
