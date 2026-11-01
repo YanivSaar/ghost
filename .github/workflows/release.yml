@@ -60,11 +60,6 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
-      - name: Install build tools + LLVM for bpf-linker
-        env:
-          LLVM_VERSION: "20"
-        run: ./.github/scripts/install-llvm.sh
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -73,15 +68,23 @@ jobs:
           # -Zbuild-std with rust-src for the BPF crate.
           targets: ${{ matrix.target }}
 
+      - name: Detect LLVM / bpf-linker versions
+        run: ./.github/scripts/detect-versions.sh
+
+      - name: Install LLVM for bpf-linker
+        run: ./.github/scripts/install-llvm.sh
+
       - name: Install bpf-linker
-        env:
-          BPF_LINKER_VERSION: "0.9.15"
-          BPF_LINKER_LLVM_FEATURE: "llvm-20"
         run: |
-          cargo install bpf-linker --locked \
-            --version "$BPF_LINKER_VERSION" \
-            --no-default-features \
-            --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
+          if [[ "$BPF_LINKER_VERSION" == 0.9.* ]]; then
+            cargo install bpf-linker --locked \
+              --version "$BPF_LINKER_VERSION" \
+              --no-default-features \
+              --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
+          else
+            cargo install bpf-linker --locked \
+              --version "$BPF_LINKER_VERSION"
+          fi
 
       - uses: Swatinem/rust-cache@v2
         with:

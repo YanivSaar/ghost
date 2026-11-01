@@ -17,13 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install build tools + LLVM for bpf-linker
-        env:
-          # bpf-linker's required LLVM major version. Bump this when
-          # bpf-linker bumps its llvm-sys dep.
-          LLVM_VERSION: "20"
-        run: ./.github/scripts/install-llvm.sh
-
       - name: Install Rust toolchain (from rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@nightly
         with:
@@ -31,18 +24,29 @@ jobs:
           # bpfel-unknown-none has no prebuilt rust-std; ghost's build.rs
           # (via aya_build) uses -Zbuild-std with rust-src instead.
 
+      # bpf-linker and rustc share an LLVM bitcode ABI, so bpf-linker's
+      # LLVM major must match rustc's. Detect it, then install the right
+      # pair.
+      - name: Detect LLVM / bpf-linker versions
+        run: ./.github/scripts/detect-versions.sh
+
+      - name: Install LLVM for bpf-linker
+        run: ./.github/scripts/install-llvm.sh
+
       - name: Install bpf-linker
-        env:
-          # Pinned pair: bpf-linker 0.9.15 is the newest release whose
-          # `llvm-N` feature set still covers LLVM 20 (0.11+ require
-          # LLVM 21+ which isn't broadly packaged yet).
-          BPF_LINKER_VERSION: "0.9.15"
-          BPF_LINKER_LLVM_FEATURE: "llvm-20"
         run: |
-          cargo install bpf-linker --locked \
-            --version "$BPF_LINKER_VERSION" \
-            --no-default-features \
-            --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
+          # 0.9.x shipped --features gating; 0.10+ makes the LLVM
+          # feature the crate's default and dropped the gating subset,
+          # so --no-default-features isn't needed (and would break).
+          if [[ "$BPF_LINKER_VERSION" == 0.9.* ]]; then
+            cargo install bpf-linker --locked \
+              --version "$BPF_LINKER_VERSION" \
+              --no-default-features \
+              --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
+          else
+            cargo install bpf-linker --locked \
+              --version "$BPF_LINKER_VERSION"
+          fi
 
       - uses: Swatinem/rust-cache@v2
 
