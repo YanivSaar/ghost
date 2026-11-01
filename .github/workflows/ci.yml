@@ -32,7 +32,17 @@ jobs:
           # (via aya_build) uses -Zbuild-std with rust-src instead.
 
       - name: Install bpf-linker
-        run: cargo install bpf-linker --locked
+        env:
+          # Pinned pair: bpf-linker 0.9.15 is the newest release whose
+          # `llvm-N` feature set still covers LLVM 20 (0.11+ require
+          # LLVM 21+ which isn't broadly packaged yet).
+          BPF_LINKER_VERSION: "0.9.15"
+          BPF_LINKER_LLVM_FEATURE: "llvm-20"
+        run: |
+          cargo install bpf-linker --locked \
+            --version "$BPF_LINKER_VERSION" \
+            --no-default-features \
+            --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
 
       - uses: Swatinem/rust-cache@v2
 

@@ -74,7 +74,14 @@ jobs:
           targets: ${{ matrix.target }}
 
       - name: Install bpf-linker
-        run: cargo install bpf-linker --locked
+        env:
+          BPF_LINKER_VERSION: "0.9.15"
+          BPF_LINKER_LLVM_FEATURE: "llvm-20"
+        run: |
+          cargo install bpf-linker --locked \
+            --version "$BPF_LINKER_VERSION" \
+            --no-default-features \
+            --features "$BPF_LINKER_LLVM_FEATURE,rustc-build-sysroot"
 
       - uses: Swatinem/rust-cache@v2
         with:
