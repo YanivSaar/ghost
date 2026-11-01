@@ -27,7 +27,8 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt, clippy, rust-src
-          targets: bpfel-unknown-none
+          # bpfel-unknown-none has no prebuilt rust-std; ghost's build.rs
+          # (via aya_build) uses -Zbuild-std with rust-src instead.
 
       - name: Install bpf-linker
         run: cargo install bpf-linker --locked

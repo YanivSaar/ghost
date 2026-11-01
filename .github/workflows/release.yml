@@ -70,7 +70,9 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src
-          targets: ${{ matrix.target }}, bpfel-unknown-none
+          # bpfel-unknown-none has no prebuilt rust-std; aya_build uses
+          # -Zbuild-std with rust-src for the BPF crate.
+          targets: ${{ matrix.target }}
 
       - name: Install bpf-linker
         run: cargo install bpf-linker --locked
