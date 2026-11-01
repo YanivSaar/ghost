@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ghost_common::Config;
 
 use crate::{
@@ -26,6 +26,112 @@ pub fn run_lock(pid: u32, record: Option<String>) -> Result<()> {
 
 pub fn run_catch(pid: u32, record: Option<String>, threshold_ns: u64) -> Result<()> {
     run_with_mode(pid, record, ActiveMode::Catch, threshold_ns)
+}
+
+/// Launch `cmd` under cold-mode instrumentation: fork the target with
+/// SIGSTOP, wire it into PID_SET + the cold BPF program, write COLD_LAUNCH,
+/// then SIGCONT and watch its startup until it exits.
+pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
+    use crate::target::cmd::CmdHandle;
+
+    if cmd.is_empty() {
+        anyhow::bail!("ghost cold: no command supplied");
+    }
+
+    let handle = CmdHandle::spawn_stopped(&cmd)
+        .context("ghost cold: spawning stopped child")?;
+    let pid = handle.pid as u32;
+    let cmdline = cmd.join(" ");
+
+    let state = Arc::new(RwLock::new({
+        let mut s = AppState::new(pid, cmd[0].clone());
+        s.mode = ActiveMode::Cold;
+        s.cold.cmdline = cmdline;
+        s
+    }));
+    let stop  = Arc::new(AtomicBool::new(false));
+
+    // Load eBPF, track the stopped child, attach cold probe.
+    let ebpf_result = load_ebpf(pid, 0);
+    let mut launch_ns: u64 = 0;
+    match ebpf_result {
+        Ok(mut ebpf) => {
+            let probe_res = ebpf.attach_cold();
+            let track_res = ebpf.attach_track();
+            let errors: Vec<_> = probe_res.errors().into_iter()
+                .chain(track_res.errors())
+                .map(|s| s.to_string())
+                .collect();
+
+            // Timestamp the launch moment just before releasing the child.
+            launch_ns = read_monotonic_ns();
+            let _ = ebpf.set_cold_launch(launch_ns);
+
+            {
+                let mut st = state.write().unwrap();
+                st.ebpf_ok    = errors.is_empty();
+                st.ebpf_error = if errors.is_empty() { None } else { Some(errors.join("; ")) };
+                st.cold.launch_ts_ns = launch_ns;
+            }
+
+            // Spawn the consumer BEFORE resuming the child so no event is lost
+            // between SIGCONT and the first poll.
+            let state_c = Arc::clone(&state);
+            let stop_c  = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                crate::ebpf::consumer::run(ebpf, state_c, stop_c);
+            });
+        }
+        Err(e) => {
+            let mut st = state.write().unwrap();
+            st.ebpf_ok    = false;
+            st.ebpf_error = Some(format!("eBPF unavailable: {e}"));
+            // No eBPF — still release the child, but the timeline will stay empty.
+            launch_ns = read_monotonic_ns();
+            st.cold.launch_ts_ns = launch_ns;
+        }
+    }
+
+    // Release the child. From this instant the cold timeline is live.
+    handle.resume().context("resuming stopped child")?;
+
+    // /proc poller for identity + RSS.
+    {
+        let state_p = Arc::clone(&state);
+        let stop_p  = Arc::clone(&stop);
+        let target_p = PidTarget::attach(pid)?;
+        std::thread::spawn(move || proc_poller(target_p, state_p, stop_p));
+    }
+
+    // Reaper: waitpid in the background, record exit status.
+    {
+        let state_r = Arc::clone(&state);
+        std::thread::spawn(move || {
+            let code = handle.wait().ok();
+            let mut st = state_r.write().unwrap();
+            st.cold.exit_status = code;
+            st.cold.done        = true;
+            st.target_gone      = true;
+        });
+    }
+
+    if let Some(path) = record {
+        eprintln!("ghost: cold recording to {path} (writer stub)");
+    }
+
+    let mut tui = Tui::init()?;
+    tui.run(Arc::clone(&state), Arc::clone(&stop))?;
+
+    stop.store(true, Ordering::Relaxed);
+    std::thread::sleep(Duration::from_millis(50));
+    Ok(())
+}
+
+/// CLOCK_MONOTONIC nanoseconds — same clock as bpf_ktime_get_ns.
+fn read_monotonic_ns() -> u64 {
+    let mut ts: libc::timespec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts); }
+    (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }
 
 fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_threshold_ns: u64) -> Result<()> {

@@ -10,12 +10,13 @@ use aya_ebpf::{
     macros::map,
     maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, RingBuf},
 };
-use ghost_common::{Config, FutexInflight, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{ColdStat, Config, FutexInflight, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 mod track;
 mod watch;
 mod lock;
 mod catch;
+mod cold;
 mod irq;
 mod startup;
 
@@ -49,6 +50,18 @@ static FUTEX_INFLIGHT: HashMap<u32, FutexInflight> = HashMap::with_max_entries(1
 /// executes on the CPU it entered on and returns on the same CPU.
 #[map]
 static CATCH_INFLIGHT: PerCpuHashMap<u64, u64> = PerCpuHashMap::with_max_entries(16_384, 0);
+
+/// cold lens: (pid<<32|nr) -> ColdStat. first_ts_ns is the earliest time this
+/// (pid, nr) pair was observed since the program was attached; count rolls up
+/// every enter afterward. Shared HashMap (not per-CPU) so first-observation
+/// semantics are global across CPUs.
+#[map]
+static COLD_STAT: HashMap<u64, ColdStat> = HashMap::with_max_entries(16_384, 0);
+
+/// cold lens: launch timestamp — written once by userspace right before it
+/// resumes the stopped child, so the TUI can show "ms since launch". Index 0.
+#[map]
+static COLD_LAUNCH: Array<u64> = Array::with_max_entries(1, 0);
 
 /// CPU -> IRQ handler entry timestamp (jitter mode).
 #[map]

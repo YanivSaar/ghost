@@ -3,3 +3,4 @@
 pub mod overview;
 pub mod lock;
 pub mod catch;
+pub mod cold;

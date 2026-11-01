@@ -2,3 +2,4 @@
 pub mod pid;
 pub mod tree;
 pub mod cgroup;
+pub mod cmd;

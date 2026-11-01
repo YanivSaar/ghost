@@ -140,10 +140,7 @@ fn main() -> anyhow::Result<()> {
             }
             supervisor::run_catch(pid, cli.record, threshold_ns)
         }
-        Some(Cmd::Cold   { cmd }) => {
-            eprintln!("ghost: cold mode is Phase-5 (not yet implemented). cmd={cmd:?}");
-            Ok(())
-        }
+        Some(Cmd::Cold   { cmd }) => supervisor::run_cold(cmd, cli.record),
         Some(Cmd::Jitter { pid }) => {
             eprintln!("ghost: jitter mode is Phase-6 (not yet implemented). Try: ghost snap {pid}");
             Ok(())

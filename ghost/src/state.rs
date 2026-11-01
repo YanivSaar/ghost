@@ -5,7 +5,7 @@
 //! hold the write lock only long enough to update aggregates.
 
 use std::collections::VecDeque;
-use ghost_common::{LockStat, SyscallKey, SyscallStat};
+use ghost_common::{ColdStat, LockStat, SyscallKey, SyscallStat};
 use crate::proc::ProcSnapshot;
 
 /// Max hits retained in CatchLensState.recent_hits (newest first).
@@ -25,6 +25,7 @@ pub struct AppState {
     pub watch:      WatchState,
     pub lock:       LockLensState,
     pub catch:      CatchLensState,
+    pub cold:       ColdLensState,
     pub snap:       Option<ProcSnapshot>,
 
     /// Set to true when the target process exits.
@@ -37,6 +38,21 @@ pub enum ActiveMode {
     Snap,
     Lock,
     Catch,
+    Cold,
+}
+
+/// Live state for the `cold` lens. `launch_ts_ns` is captured in the same
+/// clock domain as bpf_ktime_get_ns (CLOCK_MONOTONIC), so timeline rows can
+/// render first-syscall deltas as "+X µs since launch". `exit_status` is set
+/// by the reaper thread when the child terminates.
+#[derive(Debug, Default)]
+pub struct ColdLensState {
+    pub cmdline:       String,
+    pub launch_ts_ns:  u64,
+    /// (nr, first_ts_ns, count), sorted by first_ts_ns ascending.
+    pub timeline:      Vec<(u32, u64, u64)>,
+    pub exit_status:   Option<i32>,
+    pub done:          bool,
 }
 
 /// Live aggregates for lock mode. Populated from the LOCK_STAT eBPF map.
@@ -111,11 +127,17 @@ impl AppState {
             watch: WatchState::default(),
             lock:  LockLensState::default(),
             catch: CatchLensState::default(),
+            cold:  ColdLensState::default(),
             snap: None,
             target_gone: false,
         }
     }
 }
+
+/// Suppress unused-import warning when ColdStat lands here only as a type
+/// reference in future consumer code.
+#[allow(dead_code)]
+fn _cold_stat_type_check(_s: ColdStat) {}
 
 #[cfg(test)]
 mod tests {
@@ -172,6 +194,16 @@ mod tests {
         // newest first
         assert_eq!(c.recent_hits.front().unwrap().ts_ns, (CATCH_RING_CAP + 49) as u64);
         assert_eq!(c.max_delta_ns, (CATCH_RING_CAP + 49) as u64);
+    }
+
+    #[test]
+    fn cold_lens_state_defaults() {
+        let c = ColdLensState::default();
+        assert_eq!(c.launch_ts_ns, 0);
+        assert!(c.cmdline.is_empty());
+        assert!(c.timeline.is_empty());
+        assert!(c.exit_status.is_none());
+        assert!(!c.done);
     }
 
     #[test]

@@ -7,7 +7,7 @@ use aya::{
     programs::TracePoint,
     Ebpf,
 };
-use ghost_common::{Config, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{ColdStat, Config, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 static GHOST_EBPF_BYTES: &[u8] = include_bytes_aligned!(
     concat!(env!("OUT_DIR"), "/ghost")
@@ -59,6 +59,38 @@ impl GhostEbpf {
         res.catch_enter = attach_tp(&mut self.ebpf, "sys_enter_catch", "raw_syscalls", "sys_enter");
         res.catch_exit  = attach_tp(&mut self.ebpf, "sys_exit_catch",  "raw_syscalls", "sys_exit");
         res
+    }
+
+    pub fn attach_cold(&mut self) -> AttachResult {
+        let mut res = AttachResult::default();
+        res.cold_enter = attach_tp(&mut self.ebpf, "sys_enter_cold", "raw_syscalls", "sys_enter");
+        res
+    }
+
+    /// Record the wall-clock launch timestamp (monotonic ns, matches
+    /// bpf_ktime_get_ns) so the TUI can present first-syscall times
+    /// relative to launch. Called by the cold supervisor just before
+    /// it resumes the stopped child.
+    pub fn set_cold_launch(&mut self, ts_ns: u64) -> Result<()> {
+        let map = self.ebpf.map_mut("COLD_LAUNCH")
+            .ok_or_else(|| anyhow!("COLD_LAUNCH map not found"))?;
+        let mut arr: Array<_, u64> = Array::try_from(map)?;
+        arr.set(0, ts_ns, 0).context("writing COLD_LAUNCH[0]")
+    }
+
+    /// Read COLD_STAT (keyed by pid<<32|nr). Returns (pid, nr, stat) tuples
+    /// sorted by first_ts_ns ascending — earliest syscalls first.
+    pub fn read_cold_stats(&self) -> Vec<(u32, u32, ColdStat)> {
+        let Some(map) = self.ebpf.map("COLD_STAT") else { return vec![] };
+        let Ok(h) = HashMap::<_, u64, ColdStat>::try_from(map) else { return vec![] };
+
+        let mut out: Vec<(u32, u32, ColdStat)> = h.iter().filter_map(|r| r.ok()).map(|(k, v)| {
+            let pid = (k >> 32) as u32;
+            let nr  = (k & 0xffff_ffff) as u32;
+            (pid, nr, v)
+        }).collect();
+        out.sort_by(|a, b| a.2.first_ts_ns.cmp(&b.2.first_ts_ns));
+        out
     }
 
     pub fn attach_track(&mut self) -> AttachResult {
@@ -129,6 +161,7 @@ pub struct AttachResult {
     pub futex_exit:   Option<String>,
     pub catch_enter:  Option<String>,
     pub catch_exit:   Option<String>,
+    pub cold_enter:   Option<String>,
 }
 
 impl AttachResult {
@@ -138,6 +171,7 @@ impl AttachResult {
             &self.fork, &self.exit,
             &self.futex_enter, &self.futex_exit,
             &self.catch_enter, &self.catch_exit,
+            &self.cold_enter,
         ].iter().filter_map(|e| e.as_deref()).collect()
     }
 }

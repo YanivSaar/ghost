@@ -55,6 +55,8 @@ pub fn run(
             let stats = ebpf.read_syscall_stats();
             // lock stats (lock lens) — cheap: empty vec if the map is empty.
             let locks = ebpf.read_lock_stats();
+            // cold stats (cold lens) — cheap: empty vec if the map is empty.
+            let cold = ebpf.read_cold_stats();
 
             let mut st = state.write().unwrap();
 
@@ -69,6 +71,10 @@ pub fn run(
             st.lock.top_locks     = locks.into_iter().take(20).collect();
             st.lock.total_waits   = waits_total;
             st.lock.total_wait_ns = ns_total;
+
+            st.cold.timeline = cold.into_iter()
+                .map(|(_pid, nr, s)| (nr, s.first_ts_ns, s.count))
+                .collect();
         }
 
         std::thread::sleep(Duration::from_millis(10));

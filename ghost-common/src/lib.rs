@@ -43,6 +43,16 @@ pub struct SyscallStat {
     pub max_ns:   u64,
 }
 
+/// Per-(pid, syscall) startup stat. first_ts_ns captures the first time
+/// the tracked process ever entered this syscall after being attached;
+/// count is the total enter observations.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ColdStat {
+    pub first_ts_ns: u64,
+    pub count:       u64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LockStat {
@@ -142,6 +152,7 @@ mod user_impls {
     unsafe impl aya::Pod for SyscallKey {}
     unsafe impl aya::Pod for SyscallStat {}
     unsafe impl aya::Pod for LockStat {}
+    unsafe impl aya::Pod for ColdStat {}
     unsafe impl aya::Pod for FutexInflight {}
     unsafe impl aya::Pod for Config {}
     unsafe impl aya::Pod for SchedSwitchRecord {}
