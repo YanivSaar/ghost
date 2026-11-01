@@ -12,66 +12,52 @@ pub enum EventKind {
     SyscallExit = 1,
     SchedSwitch = 2,
     SchedWakeup = 3,
-    FutexWait = 4,
-    FutexWake = 5,
-    IrqSpan = 6,
-    Fork = 7,
-    Exit = 8,
-    ExecPhase = 9,
+    FutexWait   = 4,
+    FutexWake   = 5,
+    IrqSpan     = 6,
+    Fork        = 7,
+    Exit        = 8,
+    ExecPhase   = 9,
 }
 
 /// Per-tracked-PID metadata stored as the value of the PID_SET map.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct TrackInfo {
-    /// Root PID of the tracked subtree (equals pid for a single-PID target).
     pub root: u32,
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SyscallKey {
     pub pid: u32,
-    pub nr: u32,
+    pub nr:  u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SyscallStat {
-    pub count: u64,
+    pub count:    u64,
     pub total_ns: u64,
-    pub max_ns: u64,
+    pub max_ns:   u64,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LockStat {
-    pub waits: u64,
+    pub waits:         u64,
     pub total_wait_ns: u64,
-    pub max_wait_ns: u64,
-    pub holder_tid: u32,
-    pub max_queue: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct SchedSwitch {
-    pub pid: u32,
-    pub tid: u32,
-    pub ts: u64,
-    pub next_comm: [u8; 16],
-    /// 1 if the switch was involuntary (preemption), 0 otherwise.
-    pub involuntary: u8,
+    pub max_wait_ns:   u64,
+    pub holder_tid:    u32,
+    pub max_queue:     u32,
 }
 
 /// Runtime knobs pushed into the CFG map so userspace can retune without a reload.
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
-    /// Only emit a detail event for a syscall slower than this (ns).
     pub event_threshold_ns: u64,
-    /// `catch` trip threshold (ns); 0 disables.
-    pub catch_above_ns: u64,
+    pub catch_above_ns:     u64,
 }
 
 impl Default for Config {
@@ -80,6 +66,41 @@ impl Default for Config {
     }
 }
 
-// SAFETY: all fields are plain-old-data with no padding that matters across
-// the boundary. On the userspace side (feature = "user") these also implement
-// aya::Pod via the loader; kept out of this crate to avoid the dep here.
+/// Ring-buffer record: sched_switch event (kind = SchedSwitch = 2).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct SchedSwitchRecord {
+    pub kind:        u8,    // EventKind::SchedSwitch
+    pub involuntary: u8,    // 1 = preempted (prev_state == 0), 0 = voluntary
+    pub _pad:        [u8; 2],
+    pub pid:         u32,   // tgid of the tracked process
+    pub tid:         u32,   // tid that was switched out
+    pub _pad2:       u32,
+    pub ts_ns:       u64,
+    pub next_pid:    u32,
+    pub _pad3:       u32,
+    pub next_comm:   [u8; 16],
+}
+
+/// Ring-buffer record: process exit (kind = Exit = 8).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ExitRecord {
+    pub kind: u8,    // EventKind::Exit
+    pub _pad:  [u8; 3],
+    pub pid:  u32,
+}
+
+// ── userspace-only impls ─────────────────────────────────────────────────────
+
+#[cfg(feature = "user")]
+mod user_impls {
+    use super::*;
+    unsafe impl aya::Pod for TrackInfo {}
+    unsafe impl aya::Pod for SyscallKey {}
+    unsafe impl aya::Pod for SyscallStat {}
+    unsafe impl aya::Pod for LockStat {}
+    unsafe impl aya::Pod for Config {}
+    unsafe impl aya::Pod for SchedSwitchRecord {}
+    unsafe impl aya::Pod for ExitRecord {}
+}

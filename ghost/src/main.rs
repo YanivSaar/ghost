@@ -80,14 +80,14 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Snap { pid }) => modes::snap::run(pid),
         None => {
             let pid = cli.pid.unwrap_or_else(|| {
-                eprintln!("ghost: a PID is required.  Usage: ghost <pid>  or  ghost snap <pid>");
+                eprintln!("ghost: a PID is required.  Usage: ghost <pid>");
                 std::process::exit(1);
             });
-            modes::snap::run(pid)
+            // Default: live watch dashboard. Falls back to proc-only if no eBPF caps.
+            supervisor::run(pid, cli.record)
         }
         Some(Cmd::Watch  { pid }) => {
-            eprintln!("ghost: watch mode is Phase-2 (not yet implemented). Try: ghost snap {pid}");
-            Ok(())
+            supervisor::run(pid, cli.record)
         }
         Some(Cmd::Tree   { pid }) => {
             eprintln!("ghost: tree mode is Phase-3 (not yet implemented). Try: ghost snap {pid}");
