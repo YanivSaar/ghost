@@ -73,6 +73,37 @@ enum Cmd {
     Diff { a: String, b: String },
 }
 
+/// Parse a short duration like "10ms", "500us", "1s", "250000ns" into nanoseconds.
+/// Accepts suffixes: ns, us, µs, ms, s. Bare integers are interpreted as ns.
+pub(crate) fn parse_duration_ns(s: &str) -> Result<u64, String> {
+    let s = s.trim();
+    if s.is_empty() { return Err("empty".into()); }
+
+    let (num_str, mult): (&str, u64) =
+        if let Some(rest) = s.strip_suffix("ns") { (rest, 1) }
+        else if let Some(rest) = s.strip_suffix("us") { (rest, 1_000) }
+        else if let Some(rest) = s.strip_suffix("µs") { (rest, 1_000) }
+        else if let Some(rest) = s.strip_suffix("ms") { (rest, 1_000_000) }
+        else if let Some(rest) = s.strip_suffix('s')  { (rest, 1_000_000_000) }
+        else { (s, 1) };
+
+    let n: u64 = num_str.trim().parse().map_err(|_| format!("invalid number '{num_str}'"))?;
+    n.checked_mul(mult).ok_or_else(|| "overflow".into())
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::parse_duration_ns;
+    #[test] fn ns()     { assert_eq!(parse_duration_ns("500ns").unwrap(), 500); }
+    #[test] fn us()     { assert_eq!(parse_duration_ns("500us").unwrap(), 500_000); }
+    #[test] fn us_utf8(){ assert_eq!(parse_duration_ns("500µs").unwrap(), 500_000); }
+    #[test] fn ms()     { assert_eq!(parse_duration_ns("10ms").unwrap(), 10_000_000); }
+    #[test] fn s()      { assert_eq!(parse_duration_ns("2s").unwrap(), 2_000_000_000); }
+    #[test] fn bare()   { assert_eq!(parse_duration_ns("1000").unwrap(), 1000); }
+    #[test] fn empty()  { assert!(parse_duration_ns("").is_err()); }
+    #[test] fn bad()    { assert!(parse_duration_ns("abc").is_err()); }
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -97,13 +128,17 @@ fn main() -> anyhow::Result<()> {
             eprintln!("ghost: cgroup mode is Phase-3 (not yet implemented). target={target}");
             Ok(())
         }
-        Some(Cmd::Lock   { pid }) => {
-            eprintln!("ghost: lock mode is Phase-3 (not yet implemented). Try: ghost snap {pid}");
-            Ok(())
-        }
+        Some(Cmd::Lock   { pid }) => supervisor::run_lock(pid, cli.record),
         Some(Cmd::Catch  { pid, above }) => {
-            eprintln!("ghost: catch mode is Phase-4 (not yet implemented). pid={pid} above={above}");
-            Ok(())
+            let threshold_ns = parse_duration_ns(&above).unwrap_or_else(|e| {
+                eprintln!("ghost: --above: {e} (expected e.g. 10ms, 500us, 1s)");
+                std::process::exit(1);
+            });
+            if threshold_ns == 0 {
+                eprintln!("ghost: --above must be greater than zero");
+                std::process::exit(1);
+            }
+            supervisor::run_catch(pid, cli.record, threshold_ns)
         }
         Some(Cmd::Cold   { cmd }) => {
             eprintln!("ghost: cold mode is Phase-5 (not yet implemented). cmd={cmd:?}");

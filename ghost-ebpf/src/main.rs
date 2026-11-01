@@ -10,11 +10,12 @@ use aya_ebpf::{
     macros::map,
     maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, RingBuf},
 };
-use ghost_common::{Config, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{Config, FutexInflight, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 mod track;
 mod watch;
 mod lock;
+mod catch;
 mod irq;
 mod startup;
 
@@ -37,6 +38,17 @@ static SYSCALL_STAT: PerCpuHashMap<SyscallKey, SyscallStat> =
 /// futex address -> contention stats.
 #[map]
 static LOCK_STAT: HashMap<u64, LockStat> = HashMap::with_max_entries(16_384, 0);
+
+/// tid -> (enter_ts, uaddr) for a pending FUTEX_WAIT. Per-CPU is wrong here
+/// because the waiter blocks on one CPU and may be woken on another, so a
+/// shared HashMap keyed by tid is the correct store.
+#[map]
+static FUTEX_INFLIGHT: HashMap<u32, FutexInflight> = HashMap::with_max_entries(16_384, 0);
+
+/// catch lens: tid<<32 | nr -> enter timestamp. Per-CPU because a syscall
+/// executes on the CPU it entered on and returns on the same CPU.
+#[map]
+static CATCH_INFLIGHT: PerCpuHashMap<u64, u64> = PerCpuHashMap::with_max_entries(16_384, 0);
 
 /// CPU -> IRQ handler entry timestamp (jitter mode).
 #[map]

@@ -6,11 +6,11 @@ use std::{
 };
 
 use aya::maps::RingBuf;
-use ghost_common::{EventKind, ExitRecord, SchedSwitchRecord};
+use ghost_common::{CatchRecord, EventKind, ExitRecord, SchedSwitchRecord};
 
 use crate::{
     ebpf::loader::GhostEbpf,
-    state::AppState,
+    state::{AppState, CatchHit},
 };
 
 pub fn run(
@@ -27,31 +27,69 @@ pub fn run(
         // position lives in the kernel's consumer page (shared memory), so
         // recreating the struct preserves the read pointer.
         {
-            let Some(map_mut) = ebpf.ebpf.map_mut("EVENTS") else {
-                std::thread::sleep(Duration::from_millis(10));
-                continue;
-            };
-            if let Ok(mut ring) = RingBuf::try_from(map_mut) {
-                while let Some(item) = ring.next() {
-                    dispatch_event(&item, &state);
+            if let Some(map_mut) = ebpf.ebpf.map_mut("EVENTS") {
+                if let Ok(mut ring) = RingBuf::try_from(map_mut) {
+                    while let Some(item) = ring.next() {
+                        dispatch_event(&item, &state);
+                    }
                 }
             }
         } // map_mut borrow released here
 
-        // ── Phase 2: refresh syscall stats (immutable borrow, no conflict) ─
+        // Drain the CAPTURE ring (catch lens). Separate map, so a separate borrow.
+        {
+            if let Some(map_mut) = ebpf.ebpf.map_mut("CAPTURE") {
+                if let Ok(mut ring) = RingBuf::try_from(map_mut) {
+                    while let Some(item) = ring.next() {
+                        dispatch_capture(&item, &state);
+                    }
+                }
+            }
+        }
+
+        // ── Phase 2: refresh map-backed stats (immutable borrow, no conflict) ─
         if last_stat_poll.elapsed() >= poll_interval {
             last_stat_poll = Instant::now();
+
+            // syscall stats (watch lens)
             let stats = ebpf.read_syscall_stats();
+            // lock stats (lock lens) — cheap: empty vec if the map is empty.
+            let locks = ebpf.read_lock_stats();
+
             let mut st = state.write().unwrap();
+
             let total_ns:    u64 = stats.iter().map(|(_, s)| s.total_ns).sum();
             let total_count: u64 = stats.iter().map(|(_, s)| s.count).sum();
             st.watch.top_syscalls   = stats.into_iter().take(20).collect();
             st.watch.total_syscalls = total_count;
             st.watch.total_cpu_ns   = total_ns;
+
+            let waits_total: u64 = locks.iter().map(|(_, s)| s.waits).sum();
+            let ns_total:    u64 = locks.iter().map(|(_, s)| s.total_wait_ns).sum();
+            st.lock.top_locks     = locks.into_iter().take(20).collect();
+            st.lock.total_waits   = waits_total;
+            st.lock.total_wait_ns = ns_total;
         }
 
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
+    let Some(&kind_byte) = bytes.first() else { return };
+    if kind_byte != EventKind::CatchHit as u8 { return; }
+    if bytes.len() < core::mem::size_of::<CatchRecord>() { return; }
+
+    let rec: CatchRecord = unsafe {
+        core::ptr::read_unaligned(bytes.as_ptr() as *const CatchRecord)
+    };
+    let mut st = state.write().unwrap();
+    st.catch.push(CatchHit {
+        ts_ns:    rec.ts_ns,
+        tid:      rec.tid,
+        nr:       rec.nr,
+        delta_ns: rec.delta_ns,
+    });
 }
 
 fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {

@@ -24,6 +24,9 @@ Cargo.lock
 # Local session progress tracker (never pushed)
 .ghost-progress.md
 
+# Boost scratch
+.boost/
+
 # Environment / secrets
 .env
 .env.*

@@ -11,31 +11,54 @@ use ghost_common::Config;
 use crate::{
     ebpf::loader::GhostEbpf,
     proc::ProcSnapshot,
-    state::AppState,
+    state::{ActiveMode, AppState},
     target::pid::PidTarget,
     tui::app::Tui,
 };
 
 pub fn run(pid: u32, record: Option<String>) -> Result<()> {
+    run_with_mode(pid, record, ActiveMode::Watch, 0)
+}
+
+pub fn run_lock(pid: u32, record: Option<String>) -> Result<()> {
+    run_with_mode(pid, record, ActiveMode::Lock, 0)
+}
+
+pub fn run_catch(pid: u32, record: Option<String>, threshold_ns: u64) -> Result<()> {
+    run_with_mode(pid, record, ActiveMode::Catch, threshold_ns)
+}
+
+fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_threshold_ns: u64) -> Result<()> {
     // ── resolve target ────────────────────────────────────────────────────────
     let target = PidTarget::attach(pid)?;
     let comm   = crate::proc::stat::Stat::read(pid)
         .map(|s| s.comm.clone())
         .unwrap_or_else(|_| "?".into());
 
-    let state = Arc::new(RwLock::new(AppState::new(pid, comm.clone())));
+    let state = Arc::new(RwLock::new({
+        let mut s = AppState::new(pid, comm.clone());
+        s.mode = mode;
+        s.catch.threshold_ns = catch_threshold_ns;
+        s
+    }));
     let stop  = Arc::new(AtomicBool::new(false));
 
     // ── try to load eBPF ──────────────────────────────────────────────────────
-    let ebpf_result = load_ebpf(pid);
+    let ebpf_result = load_ebpf(pid, catch_threshold_ns);
 
     match ebpf_result {
         Ok(mut ebpf) => {
-            // Attach watch + track probes (incremental — failures are logged, not fatal).
-            let watch_res = ebpf.attach_watch();
+            // Attach probes needed for the active mode. Lock mode needs futex
+            // tracepoints; watch mode needs the sys_enter/exit + sched_switch
+            // set. Track probes (fork/exit) are always useful.
+            let probe_res = match mode {
+                ActiveMode::Lock  => ebpf.attach_lock(),
+                ActiveMode::Catch => ebpf.attach_catch(),
+                _                 => ebpf.attach_watch(),
+            };
             let track_res = ebpf.attach_track();
 
-            let errors: Vec<_> = watch_res.errors().into_iter()
+            let errors: Vec<_> = probe_res.errors().into_iter()
                 .chain(track_res.errors())
                 .map(|s| s.to_string())
                 .collect();
@@ -93,10 +116,12 @@ pub fn run(pid: u32, record: Option<String>) -> Result<()> {
     Ok(())
 }
 
-fn load_ebpf(pid: u32) -> Result<GhostEbpf> {
+fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
     let mut ebpf = GhostEbpf::load()?;
     ebpf.track_pid(pid)?;
-    ebpf.set_config(Config::default())?;
+    let mut cfg = Config::default();
+    cfg.catch_above_ns = catch_above_ns;
+    ebpf.set_config(cfg)?;
     Ok(ebpf)
 }
 

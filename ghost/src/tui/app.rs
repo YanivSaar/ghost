@@ -19,8 +19,8 @@ use crossterm::{
 use ratatui::{backend::CrosstermBackend, widgets::TableState, Terminal};
 
 use crate::{
-    state::AppState,
-    tui::screens::overview,
+    state::{ActiveMode, AppState},
+    tui::screens::{catch, lock, overview},
 };
 
 pub struct Tui {
@@ -59,10 +59,13 @@ impl Tui {
                 let dense = self.dense;
                 let ts = &mut self.table_state;
                 self.terminal.draw(|f| {
-                    if dense {
-                        overview::render_dense(f, &st, ts);
-                    } else {
-                        overview::render_minimal(f, &st, ts);
+                    match (st.mode, dense) {
+                        (ActiveMode::Lock,  true)  => lock::render_dense(f, &st, ts),
+                        (ActiveMode::Lock,  false) => lock::render_minimal(f, &st, ts),
+                        (ActiveMode::Catch, true)  => catch::render_dense(f, &st, ts),
+                        (ActiveMode::Catch, false) => catch::render_minimal(f, &st, ts),
+                        (_,                 true)  => overview::render_dense(f, &st, ts),
+                        (_,                 false) => overview::render_minimal(f, &st, ts),
                     }
                 })?;
             }

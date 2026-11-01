@@ -18,6 +18,7 @@ pub enum EventKind {
     Fork        = 7,
     Exit        = 8,
     ExecPhase   = 9,
+    CatchHit    = 10,
 }
 
 /// Per-tracked-PID metadata stored as the value of the PID_SET map.
@@ -50,6 +51,14 @@ pub struct LockStat {
     pub max_wait_ns:   u64,
     pub holder_tid:    u32,
     pub max_queue:     u32,
+}
+
+/// Per-TID in-flight futex wait: enter timestamp + user-space futex address.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FutexInflight {
+    pub ts_ns: u64,
+    pub uaddr: u64,
 }
 
 /// Runtime knobs pushed into the CFG map so userspace can retune without a reload.
@@ -91,6 +100,39 @@ pub struct ExitRecord {
     pub pid:  u32,
 }
 
+/// Capture-ring record: a syscall whose latency exceeded cfg.catch_above_ns.
+/// Emitted by the `catch` lens programs on the CAPTURE ring buffer.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CatchRecord {
+    pub kind:     u8,    // EventKind::CatchHit = 10
+    pub _pad:     [u8; 3],
+    pub pid:      u32,   // tgid of the tracked process
+    pub tid:      u32,   // thread that tripped the wire
+    pub nr:       u32,   // syscall number
+    pub ts_ns:    u64,   // exit timestamp (monotonic ns)
+    pub delta_ns: u64,   // enter→exit elapsed
+}
+
+/// Ring-buffer record: an exec phase marker (used by `cold`).
+/// `phase` encodes the stage reached since execve:
+///   0 = execve-return, 1 = ld.so (first mmap of a .so),
+///   2 = libc-ready    (first non-mmap/mprotect/brk syscall)
+///   3 = first-syscall-batch end (reserved)
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExecPhaseRecord {
+    pub kind:  u8,     // EventKind::ExecPhase = 9
+    pub phase: u8,
+    pub _pad:  [u8; 2],
+    pub pid:   u32,
+    pub tid:   u32,
+    pub _pad2: u32,
+    pub ts_ns: u64,
+    pub nr:    u32,    // syscall nr that caused the transition (0 for execve-return)
+    pub _pad3: u32,
+}
+
 // ── userspace-only impls ─────────────────────────────────────────────────────
 
 #[cfg(feature = "user")]
@@ -100,7 +142,10 @@ mod user_impls {
     unsafe impl aya::Pod for SyscallKey {}
     unsafe impl aya::Pod for SyscallStat {}
     unsafe impl aya::Pod for LockStat {}
+    unsafe impl aya::Pod for FutexInflight {}
     unsafe impl aya::Pod for Config {}
     unsafe impl aya::Pod for SchedSwitchRecord {}
     unsafe impl aya::Pod for ExitRecord {}
+    unsafe impl aya::Pod for CatchRecord {}
+    unsafe impl aya::Pod for ExecPhaseRecord {}
 }

@@ -7,7 +7,7 @@ use aya::{
     programs::TracePoint,
     Ebpf,
 };
-use ghost_common::{Config, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{Config, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 static GHOST_EBPF_BYTES: &[u8] = include_bytes_aligned!(
     concat!(env!("OUT_DIR"), "/ghost")
@@ -47,6 +47,20 @@ impl GhostEbpf {
         res
     }
 
+    pub fn attach_lock(&mut self) -> AttachResult {
+        let mut res = AttachResult::default();
+        res.futex_enter = attach_tp(&mut self.ebpf, "sys_enter_futex", "syscalls", "sys_enter_futex");
+        res.futex_exit  = attach_tp(&mut self.ebpf, "sys_exit_futex",  "syscalls", "sys_exit_futex");
+        res
+    }
+
+    pub fn attach_catch(&mut self) -> AttachResult {
+        let mut res = AttachResult::default();
+        res.catch_enter = attach_tp(&mut self.ebpf, "sys_enter_catch", "raw_syscalls", "sys_enter");
+        res.catch_exit  = attach_tp(&mut self.ebpf, "sys_exit_catch",  "raw_syscalls", "sys_exit");
+        res
+    }
+
     pub fn attach_track(&mut self) -> AttachResult {
         let mut res = AttachResult::default();
         res.fork = attach_tp(&mut self.ebpf, "sched_process_fork", "sched", "sched_process_fork");
@@ -75,6 +89,17 @@ impl GhostEbpf {
         out.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
         out
     }
+
+    /// Read LOCK_STAT (keyed by user-space futex address). Sorted by
+    /// total_wait_ns descending so the caller can take_N.
+    pub fn read_lock_stats(&self) -> Vec<(u64, LockStat)> {
+        let Some(map) = self.ebpf.map("LOCK_STAT") else { return vec![] };
+        let Ok(h) = HashMap::<_, u64, LockStat>::try_from(map) else { return vec![] };
+
+        let mut out: Vec<(u64, LockStat)> = h.iter().filter_map(|r| r.ok()).collect();
+        out.sort_by(|a, b| b.1.total_wait_ns.cmp(&a.1.total_wait_ns));
+        out
+    }
 }
 
 fn attach_tp(ebpf: &mut Ebpf, fn_name: &str, category: &str, name: &str) -> Option<String> {
@@ -100,11 +125,19 @@ pub struct AttachResult {
     pub sched_switch: Option<String>,
     pub fork:         Option<String>,
     pub exit:         Option<String>,
+    pub futex_enter:  Option<String>,
+    pub futex_exit:   Option<String>,
+    pub catch_enter:  Option<String>,
+    pub catch_exit:   Option<String>,
 }
 
 impl AttachResult {
     pub fn errors(&self) -> Vec<&str> {
-        [&self.sys_enter, &self.sys_exit, &self.sched_switch, &self.fork, &self.exit]
-            .iter().filter_map(|e| e.as_deref()).collect()
+        [
+            &self.sys_enter, &self.sys_exit, &self.sched_switch,
+            &self.fork, &self.exit,
+            &self.futex_enter, &self.futex_exit,
+            &self.catch_enter, &self.catch_exit,
+        ].iter().filter_map(|e| e.as_deref()).collect()
     }
 }
