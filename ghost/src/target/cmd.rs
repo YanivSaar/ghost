@@ -54,7 +54,7 @@ impl CmdHandle {
         if w < 0 {
             return Err(std::io::Error::last_os_error()).context("waitpid(WUNTRACED)");
         }
-        if unsafe { libc::WIFSTOPPED(status) } == false {
+        if !libc::WIFSTOPPED(status) {
             bail!("ghost cold: child did not stop (status={status})");
         }
 
@@ -77,10 +77,10 @@ impl CmdHandle {
         if w < 0 {
             return Err(std::io::Error::last_os_error()).context("waitpid");
         }
-        let code = if unsafe { libc::WIFEXITED(status) } {
-            unsafe { libc::WEXITSTATUS(status) }
-        } else if unsafe { libc::WIFSIGNALED(status) } {
-            128 + unsafe { libc::WTERMSIG(status) }
+        let code = if libc::WIFEXITED(status) {
+            libc::WEXITSTATUS(status)
+        } else if libc::WIFSIGNALED(status) {
+            128 + libc::WTERMSIG(status)
         } else {
             status
         };

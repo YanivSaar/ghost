@@ -13,8 +13,3 @@ aya-log-ebpf = "0.1"
 [[bin]]
 name = "ghost"
 path = "src/main.rs"
-
-[profile.dev]
-opt-level = 3
-[profile.release]
-lto = true

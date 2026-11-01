@@ -18,7 +18,6 @@ mod lock;
 mod catch;
 mod cold;
 mod jitter;
-mod startup;
 
 // ---- maps (ARCHITECTURE §5) ------------------------------------------------
 

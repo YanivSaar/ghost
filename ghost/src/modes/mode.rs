@@ -17,9 +17,11 @@ pub enum Probe {
 }
 
 /// Immutable snapshot a mode hands the render thread each frame.
+/// Concrete per-lens payloads live in `state.rs` (WatchState, LockLensState,
+/// CatchLensState, …); this struct is just the discriminant the TUI
+/// dispatches on when it doesn't already know the mode from `AppState.mode`.
 pub struct ModeView {
     pub id: ModeId,
-    // TODO(phase 2+): concrete per-mode view-model payloads.
 }
 
 pub trait Mode: Send {

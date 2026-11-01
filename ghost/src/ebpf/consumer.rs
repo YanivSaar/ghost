@@ -1,7 +1,7 @@
 //! Ring-buffer drain thread (ARCHITECTURE §6).
 
 use std::{
-    sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}},
+    sync::{Arc, Mutex, RwLock, atomic::{AtomicBool, Ordering}},
     time::{Duration, Instant},
 };
 
@@ -10,13 +10,19 @@ use ghost_common::{CatchRecord, EventKind, ExitRecord, SchedSwitchRecord};
 
 use crate::{
     ebpf::loader::GhostEbpf,
+    session::writer::SessionWriter,
     state::{AppState, CatchHit},
 };
 
+/// Optional tee sink shared with the supervisor; wrapped in Mutex because
+/// SessionWriter is `&mut`-only.
+pub type RecordSink = Option<Arc<Mutex<SessionWriter>>>;
+
 pub fn run(
-    mut ebpf: GhostEbpf,
-    state:    Arc<RwLock<AppState>>,
-    stop:     Arc<AtomicBool>,
+    mut ebpf:   GhostEbpf,
+    state:      Arc<RwLock<AppState>>,
+    stop:       Arc<AtomicBool>,
+    record:     RecordSink,
 ) {
     let poll_interval      = Duration::from_millis(500);
     let mut last_stat_poll = Instant::now();
@@ -31,6 +37,7 @@ pub fn run(
                 if let Ok(mut ring) = RingBuf::try_from(map_mut) {
                     while let Some(item) = ring.next() {
                         dispatch_event(&item, &state);
+                        tee(&record, &item);
                     }
                 }
             }
@@ -42,6 +49,7 @@ pub fn run(
                 if let Ok(mut ring) = RingBuf::try_from(map_mut) {
                     while let Some(item) = ring.next() {
                         dispatch_capture(&item, &state);
+                        tee(&record, &item);
                     }
                 }
             }
@@ -89,13 +97,38 @@ pub fn run(
             // the watch pipeline; mirror what the proc poller writes to watch
             // so the jitter screen stays coherent even in watch-less sessions.
             st.jitter.involuntary_ctx  = st.watch.involuntary_ctx;
+
+            // Dynamic PID_SET size — grows via in-kernel fork propagation.
+            let n = ebpf.tracked_count();
+            if n > 0 { st.tracked_count = n; }
+
+            // Keep the session file on disk warm.
+            if let Some(w) = &record {
+                let _ = w.lock().unwrap().flush();
+            }
         }
 
         std::thread::sleep(Duration::from_millis(10));
     }
+
+    // Final flush on shutdown.
+    if let Some(w) = &record {
+        let _ = w.lock().unwrap().flush();
+    }
 }
 
-fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
+/// Write a raw frame to the optional session sink. The first byte of the
+/// ring-buffer slice is already the EventKind discriminant, so we pass it
+/// as `kind` and the rest as the body.
+fn tee(sink: &RecordSink, bytes: &[u8]) {
+    let Some(sink) = sink else { return };
+    let Some(&kind) = bytes.first() else { return };
+    if let Ok(mut w) = sink.lock() {
+        let _ = w.write_frame(kind, bytes);
+    }
+}
+
+pub(crate) fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     let Some(&kind_byte) = bytes.first() else { return };
     if kind_byte != EventKind::CatchHit as u8 { return; }
     if bytes.len() < core::mem::size_of::<CatchRecord>() { return; }
@@ -112,7 +145,7 @@ fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     });
 }
 
-fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
+pub(crate) fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     let Some(&kind_byte) = bytes.first() else { return };
 
     if kind_byte == EventKind::SchedSwitch as u8 {

@@ -28,6 +28,14 @@ impl GhostEbpf {
         self.track_pids(&[pid], pid)
     }
 
+    /// Count the currently-tracked PIDs by walking PID_SET. Returns 0 if the
+    /// map is missing (e.g. eBPF never loaded).
+    pub fn tracked_count(&self) -> usize {
+        let Some(map) = self.ebpf.map("PID_SET") else { return 0 };
+        let Ok(h) = HashMap::<_, u32, TrackInfo>::try_from(map) else { return 0 };
+        h.iter().filter(|r| r.is_ok()).count()
+    }
+
     /// Insert every pid in `pids` into PID_SET with the given root. Used by
     /// tree + cgroup targets to seed the initial membership (fork propagation
     /// catches future children in-kernel).

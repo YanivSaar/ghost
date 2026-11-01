@@ -1,7 +1,7 @@
 //! Single-PID target. Seeds PID_SET with one entry.
 //! PID-reuse guard: compare start_time from /proc/{pid}/stat on each liveness check.
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use crate::proc::stat::Stat;
 
 pub struct PidTarget {

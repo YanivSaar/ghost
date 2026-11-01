@@ -1,7 +1,7 @@
 //! Thread lifecycle: load eBPF, spawn poller + consumer, run TUI (ARCHITECTURE §3).
 
 use std::{
-    sync::{Arc, RwLock, atomic::{AtomicBool, Ordering}},
+    sync::{Arc, Mutex, RwLock, atomic::{AtomicBool, Ordering}},
     time::Duration,
 };
 
@@ -9,12 +9,38 @@ use anyhow::{Context, Result};
 use ghost_common::Config;
 
 use crate::{
-    ebpf::loader::GhostEbpf,
+    ebpf::{consumer::RecordSink, loader::GhostEbpf},
     proc::ProcSnapshot,
+    session::{format::SessionMeta, writer::SessionWriter},
     state::{ActiveMode, AppState},
     target::pid::PidTarget,
     tui::app::Tui,
 };
+
+fn mode_name(m: ActiveMode) -> &'static str {
+    match m {
+        ActiveMode::Watch  => "watch",
+        ActiveMode::Snap   => "snap",
+        ActiveMode::Lock   => "lock",
+        ActiveMode::Catch  => "catch",
+        ActiveMode::Cold   => "cold",
+        ActiveMode::Jitter => "jitter",
+    }
+}
+
+/// Open a .ghost session file for recording. Returns None (and prints a
+/// warning) if the path can't be opened — we never let a bad --record
+/// derail the session.
+fn open_sink(path: &str, pid: u32, comm: &str, mode: ActiveMode) -> RecordSink {
+    let meta = SessionMeta::new(pid, comm, mode_name(mode));
+    match SessionWriter::open(path, &meta) {
+        Ok(w) => Some(Arc::new(Mutex::new(w))),
+        Err(e) => {
+            eprintln!("ghost: could not open session file {path}: {e}");
+            None
+        }
+    }
+}
 
 pub fn run(pid: u32, record: Option<String>) -> Result<()> {
     run_with_mode(pid, record, ActiveMode::Watch, 0)
@@ -87,10 +113,11 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
     }));
     let stop  = Arc::new(AtomicBool::new(false));
 
+    // Open the session sink (if --record was passed).
+    let sink: RecordSink = record.as_deref().and_then(|p| open_sink(p, pid, &cmd[0], ActiveMode::Cold));
+
     // Load eBPF, track the stopped child, attach cold probe.
-    let ebpf_result = load_ebpf(pid, 0);
-    let mut launch_ns: u64 = 0;
-    match ebpf_result {
+    match load_ebpf(pid, 0) {
         Ok(mut ebpf) => {
             let probe_res = ebpf.attach_cold();
             let track_res = ebpf.attach_track();
@@ -100,7 +127,7 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
                 .collect();
 
             // Timestamp the launch moment just before releasing the child.
-            launch_ns = read_monotonic_ns();
+            let launch_ns = read_monotonic_ns();
             let _ = ebpf.set_cold_launch(launch_ns);
 
             {
@@ -114,8 +141,9 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
             // between SIGCONT and the first poll.
             let state_c = Arc::clone(&state);
             let stop_c  = Arc::clone(&stop);
+            let sink_c  = sink.clone();
             std::thread::spawn(move || {
-                crate::ebpf::consumer::run(ebpf, state_c, stop_c);
+                crate::ebpf::consumer::run(ebpf, state_c, stop_c, sink_c);
             });
         }
         Err(e) => {
@@ -123,8 +151,7 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
             st.ebpf_ok    = false;
             st.ebpf_error = Some(format!("eBPF unavailable: {e}"));
             // No eBPF — still release the child, but the timeline will stay empty.
-            launch_ns = read_monotonic_ns();
-            st.cold.launch_ts_ns = launch_ns;
+            st.cold.launch_ts_ns = read_monotonic_ns();
         }
     }
 
@@ -151,17 +178,177 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
         });
     }
 
-    if let Some(path) = record {
-        eprintln!("ghost: cold recording to {path} (writer stub)");
-    }
-
     let mut tui = Tui::init()?;
     tui.run(Arc::clone(&state), Arc::clone(&stop))?;
 
     stop.store(true, Ordering::Relaxed);
     std::thread::sleep(Duration::from_millis(50));
+    // Drop the sink; its Drop will not flush, so explicitly flush here.
+    if let Some(w) = &sink { let _ = w.lock().unwrap().flush(); }
     Ok(())
 }
+
+/// Replay a .ghost session file in the TUI. The replay thread dispatches
+/// each frame through the same handlers the live consumer uses, so screens
+/// see the same state shape — just no map-polled aggregates (those weren't
+/// captured). An optional seek skips the first `seek_us` microseconds.
+pub fn run_replay(path: String, seek: Option<String>) -> Result<()> {
+    use crate::session::reader::SessionReader;
+
+    let mut reader = SessionReader::open(&path)
+        .with_context(|| format!("opening session {path}"))?;
+
+    // Decode mode name back to ActiveMode.
+    let mode = match reader.meta.mode.as_str() {
+        "lock"   => ActiveMode::Lock,
+        "catch"  => ActiveMode::Catch,
+        "cold"   => ActiveMode::Cold,
+        "jitter" => ActiveMode::Jitter,
+        "snap"   => ActiveMode::Snap,
+        _        => ActiveMode::Watch,
+    };
+    let seek_us = seek.as_deref().map(parse_seek).transpose()?.unwrap_or(0);
+
+    let state = Arc::new(RwLock::new({
+        let mut s = AppState::new(reader.meta.pid, reader.meta.comm.clone());
+        s.mode = mode;
+        s.ebpf_ok = false;
+        s.ebpf_error = Some(format!("replay {path}"));
+        s.target_label = Some(format!("replay[{}]", reader.meta.mode));
+        s
+    }));
+    let stop  = Arc::new(AtomicBool::new(false));
+
+    // Replay thread: iterate frames, respect ts_delta_us (speed = 1x after seek).
+    {
+        let state_r = Arc::clone(&state);
+        let stop_r  = Arc::clone(&stop);
+        std::thread::spawn(move || replay_loop(&mut reader, seek_us, state_r, stop_r));
+    }
+
+    let mut tui = Tui::init()?;
+    tui.run(Arc::clone(&state), Arc::clone(&stop))?;
+    stop.store(true, Ordering::Relaxed);
+    std::thread::sleep(Duration::from_millis(50));
+    Ok(())
+}
+
+fn replay_loop(
+    reader:  &mut crate::session::reader::SessionReader,
+    seek_us: u64,
+    state:   Arc<RwLock<AppState>>,
+    stop:    Arc<AtomicBool>,
+) {
+    let mut cumulative_us: u64 = 0;
+    while !stop.load(Ordering::Relaxed) {
+        let frame = match reader.next_frame() {
+            Ok(Some(f))  => f,
+            Ok(None)     => {
+                state.write().unwrap().target_gone = true;
+                return;
+            }
+            Err(e) => {
+                state.write().unwrap().ebpf_error = Some(format!("replay error: {e}"));
+                return;
+            }
+        };
+        let (_kind, delta_us, bytes) = frame;
+        cumulative_us = cumulative_us.saturating_add(delta_us as u64);
+
+        if cumulative_us > seek_us && delta_us > 0 {
+            // Cap pacing at 100ms so very long idle gaps don't freeze replay.
+            let sleep_us = (delta_us as u64).min(100_000);
+            std::thread::sleep(Duration::from_micros(sleep_us));
+        }
+
+        crate::ebpf::consumer::dispatch_event(&bytes, &state);
+        crate::ebpf::consumer::dispatch_capture(&bytes, &state);
+    }
+}
+
+fn parse_seek(s: &str) -> Result<u64> {
+    // Accept "1s" / "500ms" / "250us" / "750000"
+    let s = s.trim();
+    if s.is_empty() { return Ok(0); }
+    let (num, mult): (&str, u64) =
+        if let Some(r) = s.strip_suffix("ms") { (r, 1_000) }
+        else if let Some(r) = s.strip_suffix("us") { (r, 1) }
+        else if let Some(r) = s.strip_suffix('s') { (r, 1_000_000) }
+        else { (s, 1) };
+    num.trim().parse::<u64>()
+        .map(|n| n.saturating_mul(mult))
+        .map_err(|_| anyhow::anyhow!("ghost replay: bad --seek value '{s}'"))
+}
+
+/// Compute a brief diff between two .ghost sessions and print it.
+pub fn run_diff(a: String, b: String) -> Result<()> {
+    use crate::session::reader::SessionReader;
+    let fold = |path: &str| -> Result<(SessionMeta, [u64; 11])> {
+        let mut r = SessionReader::open(path)?;
+        let mut counts = [0u64; 11];
+        let meta_pid = r.meta.pid;
+        let meta_comm = r.meta.comm.clone();
+        let meta_mode = r.meta.mode.clone();
+        let meta_start = r.meta.start_ns;
+        let meta_host = r.meta.hostname.clone();
+        while let Some((kind, _delta, _body)) = r.next_frame()? {
+            if (kind as usize) < counts.len() {
+                counts[kind as usize] += 1;
+            }
+        }
+        Ok((
+            SessionMeta { pid: meta_pid, comm: meta_comm, mode: meta_mode, start_ns: meta_start, hostname: meta_host },
+            counts,
+        ))
+    };
+
+    let (ma, ca) = fold(&a).with_context(|| format!("reading {a}"))?;
+    let (mb, cb) = fold(&b).with_context(|| format!("reading {b}"))?;
+
+    println!("A: {} pid={} mode={} host={}", a, ma.pid, ma.mode, ma.hostname);
+    println!("B: {} pid={} mode={} host={}", b, mb.pid, mb.mode, mb.hostname);
+    println!("{:>14}  {:>10}  {:>10}  {:>10}", "KIND", "A", "B", "Δ(B-A)");
+    for (i, name) in EVENT_KIND_NAMES.iter().enumerate() {
+        if ca[i] == 0 && cb[i] == 0 { continue; }
+        let d = cb[i] as i64 - ca[i] as i64;
+        println!("{:>14}  {:>10}  {:>10}  {:>+10}", name, ca[i], cb[i], d);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_seek_bare_us() { assert_eq!(parse_seek("500").unwrap(), 500); }
+    #[test]
+    fn parse_seek_ms()      { assert_eq!(parse_seek("250ms").unwrap(), 250_000); }
+    #[test]
+    fn parse_seek_s()       { assert_eq!(parse_seek("2s").unwrap(), 2_000_000); }
+    #[test]
+    fn parse_seek_us()      { assert_eq!(parse_seek("750us").unwrap(), 750); }
+    #[test]
+    fn parse_seek_empty_zero() { assert_eq!(parse_seek("").unwrap(), 0); }
+    #[test]
+    fn parse_seek_bad()        { assert!(parse_seek("nope").is_err()); }
+
+    #[test]
+    fn mode_name_covers_all_variants() {
+        assert_eq!(mode_name(ActiveMode::Watch),  "watch");
+        assert_eq!(mode_name(ActiveMode::Lock),   "lock");
+        assert_eq!(mode_name(ActiveMode::Catch),  "catch");
+        assert_eq!(mode_name(ActiveMode::Cold),   "cold");
+        assert_eq!(mode_name(ActiveMode::Jitter), "jitter");
+        assert_eq!(mode_name(ActiveMode::Snap),   "snap");
+    }
+}
+
+const EVENT_KIND_NAMES: [&str; 11] = [
+    "unknown",   "SyscallExit", "SchedSwitch", "SchedWakeup",
+    "FutexWait", "FutexWake",   "IrqSpan",     "Fork",
+    "Exit",      "ExecPhase",   "CatchHit",
+];
 
 /// CLOCK_MONOTONIC nanoseconds — same clock as bpf_ktime_get_ns.
 fn read_monotonic_ns() -> u64 {
@@ -202,6 +389,10 @@ fn run_with_target(
     // ── try to load eBPF ──────────────────────────────────────────────────────
     let ebpf_result = load_ebpf(pid, catch_threshold_ns);
 
+    // Open the session sink (if --record was passed) up front; the consumer
+    // thread holds a clone and tees frames into it.
+    let sink: RecordSink = record.as_deref().and_then(|p| open_sink(p, pid, &comm, mode));
+
     match ebpf_result {
         Ok(mut ebpf) => {
             // Seed the extra pids (tree descendants, cgroup members).
@@ -237,8 +428,9 @@ fn run_with_target(
             // Spawn eBPF consumer thread.
             let state_c  = Arc::clone(&state);
             let stop_c   = Arc::clone(&stop);
+            let sink_c   = sink.clone();
             std::thread::spawn(move || {
-                crate::ebpf::consumer::run(ebpf, state_c, stop_c);
+                crate::ebpf::consumer::run(ebpf, state_c, stop_c, sink_c);
             });
         }
         Err(e) => {
@@ -254,18 +446,6 @@ fn run_with_target(
         let stop_p   = Arc::clone(&stop);
         let target_p = PidTarget { pid: target.pid, start_time: target.start_time };
         std::thread::spawn(move || proc_poller(target_p, state_p, stop_p));
-    }
-
-    // ── optional session writer ───────────────────────────────────────────────
-    if let Some(path) = record {
-        let meta = crate::session::format::SessionMeta::new(pid, &comm, "watch");
-        match crate::session::writer::SessionWriter::open(&path, &meta) {
-            Ok(_writer) => {
-                // TODO: thread to tee events from consumer to writer
-                eprintln!("ghost: recording to {path} (writer stub)");
-            }
-            Err(e) => eprintln!("ghost: could not open session file {path}: {e}"),
-        }
     }
 
     // ── TUI (blocks until quit) ───────────────────────────────────────────────

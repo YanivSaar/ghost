@@ -5,18 +5,22 @@
 //!   /sys/fs/cgroup/system.slice/foo.service   — absolute path
 //!   system.slice/foo.service                  — relative path under /sys/fs/cgroup
 //!   /system.slice/foo.service                 — same, leading slash tolerated
-//!
-//! Systemd unit resolution (`foo.service` → `/system.slice/foo.service`) is
-//! deliberately NOT done here; it requires talking to systemd and is better
-//! as a follow-up. Users who want "the unit's cgroup" should pass the path
-//! that `systemctl show -p ControlGroup <unit>` prints.
+//!   foo.service / foo.scope / foo@1.slice     — systemd unit name, resolved
+//!     via `systemctl show -p ControlGroup --value <unit>`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
 
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
+
+/// Systemd unit suffixes we try to resolve.
+const UNIT_SUFFIXES: &[&str] = &[
+    ".service", ".scope", ".slice", ".socket",
+    ".timer",   ".mount", ".path",  ".target",
+];
 
 pub struct CgroupTarget {
     /// Absolute cgroup directory on disk.
@@ -56,12 +60,46 @@ impl CgroupTarget {
 }
 
 fn resolve(spec: &str) -> Result<PathBuf> {
-    let p = Path::new(spec);
-    if p.is_absolute() {
-        return Ok(p.to_path_buf());
+    // Rule 1: path-shaped input (contains a '/') is treated as a path.
+    if spec.contains('/') {
+        let p = Path::new(spec);
+        if p.is_absolute() { return Ok(p.to_path_buf()); }
+        return Ok(Path::new(CGROUP_ROOT).join(spec.trim_start_matches('/')));
     }
-    let trimmed = spec.trim_start_matches('/');
-    Ok(Path::new(CGROUP_ROOT).join(trimmed))
+
+    // Rule 2: looks like a systemd unit → ask systemd.
+    if is_unit_name(spec) {
+        if let Some(cg) = resolve_systemd_unit(spec)? {
+            // systemctl returns the kernel-relative path, e.g. "/system.slice/foo.service".
+            return Ok(Path::new(CGROUP_ROOT).join(cg.trim_start_matches('/')));
+        }
+        return Err(anyhow!(
+            "ghost cgroup: systemctl could not resolve unit {spec} (is systemd running?)"
+        ));
+    }
+
+    // Rule 3: bare name — assume it's a direct child of /sys/fs/cgroup.
+    Ok(Path::new(CGROUP_ROOT).join(spec))
+}
+
+fn is_unit_name(s: &str) -> bool {
+    UNIT_SUFFIXES.iter().any(|suf| s.ends_with(suf))
+}
+
+/// Shell out to systemctl. Returns Ok(Some(path)) on success, Ok(None) if
+/// systemctl ran but gave no path (unit unknown), Err if systemctl is missing
+/// or failed. The `--value` flag strips the `ControlGroup=` prefix.
+fn resolve_systemd_unit(unit: &str) -> Result<Option<String>> {
+    let out = Command::new("systemctl")
+        .args(["show", "-p", "ControlGroup", "--value", unit])
+        .output()
+        .with_context(|| format!("spawning systemctl for unit {unit}"))?;
+    if !out.status.success() {
+        return Err(anyhow!("systemctl show failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { return Ok(None); }
+    Ok(Some(s))
 }
 
 fn read_procs(path: &Path) -> Result<Vec<u32>> {
@@ -97,6 +135,21 @@ mod tests {
     fn resolve_leading_slash_tolerated() {
         let p = resolve("/system.slice/foo.service").unwrap();
         assert_eq!(p, PathBuf::from("/system.slice/foo.service"));
+    }
+
+    #[test]
+    fn is_unit_name_matches_known_suffixes() {
+        assert!(is_unit_name("foo.service"));
+        assert!(is_unit_name("foo.scope"));
+        assert!(is_unit_name("my@0.slice"));
+        assert!(is_unit_name("foo.socket"));
+        assert!(is_unit_name("foo.timer"));
+        assert!(is_unit_name("foo.mount"));
+        assert!(is_unit_name("foo.path"));
+        assert!(is_unit_name("foo.target"));
+        assert!(!is_unit_name("plain-name"));
+        assert!(!is_unit_name("foo/bar"));
+        assert!(!is_unit_name("foo.random"));
     }
 
     #[test]

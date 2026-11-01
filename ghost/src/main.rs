@@ -9,14 +9,7 @@
 //!
 //! See docs/ARCHITECTURE.md for the full design.
 
-mod supervisor;
-mod state;
-mod target;
-mod ebpf;
-mod proc;
-mod modes;
-mod session;
-mod tui;
+use ghost::{modes, supervisor};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -136,13 +129,7 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Cmd::Cold   { cmd }) => supervisor::run_cold(cmd, cli.record),
         Some(Cmd::Jitter { pid }) => supervisor::run_jitter(pid, cli.record),
-        Some(Cmd::Replay { file, .. }) => {
-            eprintln!("ghost: replay is Phase-2 (not yet implemented). file={file}");
-            Ok(())
-        }
-        Some(Cmd::Diff   { a, b }) => {
-            eprintln!("ghost: diff is Phase-2 (not yet implemented). a={a} b={b}");
-            Ok(())
-        }
+        Some(Cmd::Replay { file, seek }) => supervisor::run_replay(file, seek),
+        Some(Cmd::Diff   { a, b })       => supervisor::run_diff(a, b),
     }
 }
