@@ -120,14 +120,8 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Watch  { pid }) => {
             supervisor::run(pid, cli.record)
         }
-        Some(Cmd::Tree   { pid }) => {
-            eprintln!("ghost: tree mode is Phase-3 (not yet implemented). Try: ghost snap {pid}");
-            Ok(())
-        }
-        Some(Cmd::Cgroup { target }) => {
-            eprintln!("ghost: cgroup mode is Phase-3 (not yet implemented). target={target}");
-            Ok(())
-        }
+        Some(Cmd::Tree   { pid })    => supervisor::run_tree(pid, cli.record),
+        Some(Cmd::Cgroup { target }) => supervisor::run_cgroup(target, cli.record),
         Some(Cmd::Lock   { pid }) => supervisor::run_lock(pid, cli.record),
         Some(Cmd::Catch  { pid, above }) => {
             let threshold_ns = parse_duration_ns(&above).unwrap_or_else(|e| {

@@ -25,11 +25,21 @@ impl GhostEbpf {
     }
 
     pub fn track_pid(&mut self, pid: u32) -> Result<()> {
+        self.track_pids(&[pid], pid)
+    }
+
+    /// Insert every pid in `pids` into PID_SET with the given root. Used by
+    /// tree + cgroup targets to seed the initial membership (fork propagation
+    /// catches future children in-kernel).
+    pub fn track_pids(&mut self, pids: &[u32], root: u32) -> Result<()> {
         let map = self.ebpf.map_mut("PID_SET")
             .ok_or_else(|| anyhow!("PID_SET map not found"))?;
         let mut pid_set: HashMap<_, u32, TrackInfo> = HashMap::try_from(map)?;
-        pid_set.insert(pid, TrackInfo { root: pid }, 0)
-            .context("inserting into PID_SET")
+        for &p in pids {
+            pid_set.insert(p, TrackInfo { root }, 0)
+                .with_context(|| format!("inserting {p} into PID_SET"))?;
+        }
+        Ok(())
     }
 
     pub fn set_config(&mut self, cfg: Config) -> Result<()> {

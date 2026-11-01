@@ -32,6 +32,38 @@ pub fn run_jitter(pid: u32, record: Option<String>) -> Result<()> {
     run_with_mode(pid, record, ActiveMode::Jitter, 0)
 }
 
+/// Follow `root_pid` and all of its (current + future) descendants.
+pub fn run_tree(root_pid: u32, record: Option<String>) -> Result<()> {
+    use crate::target::tree::TreeTarget;
+
+    let tree = TreeTarget::attach(root_pid)?;
+    let extras: Vec<u32> = tree.members.iter().copied().filter(|p| *p != root_pid).collect();
+    let label = format!("tree({})  +{}", root_pid, extras.len());
+    run_with_target(
+        root_pid, record, ActiveMode::Watch, 0,
+        extras, Some(label), tree.members.len(),
+    )
+}
+
+/// Watch every process in `target` cgroup (and any children forked afterwards).
+pub fn run_cgroup(target: String, record: Option<String>) -> Result<()> {
+    use crate::target::cgroup::CgroupTarget;
+
+    let cg = CgroupTarget::attach(&target)?;
+    if cg.members.is_empty() {
+        anyhow::bail!("ghost cgroup: {} has no processes", cg.label);
+    }
+    // Representative pid for /proc poller + identity header.
+    let root_pid = cg.members[0];
+    let extras: Vec<u32> = cg.members.iter().copied().filter(|p| *p != root_pid).collect();
+    let total = cg.members.len();
+    let label = format!("{}  ({} procs)", cg.label, total);
+    run_with_target(
+        root_pid, record, ActiveMode::Watch, 0,
+        extras, Some(label), total,
+    )
+}
+
 /// Launch `cmd` under cold-mode instrumentation: fork the target with
 /// SIGSTOP, wire it into PID_SET + the cold BPF program, write COLD_LAUNCH,
 /// then SIGCONT and watch its startup until it exits.
@@ -139,6 +171,18 @@ fn read_monotonic_ns() -> u64 {
 }
 
 fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_threshold_ns: u64) -> Result<()> {
+    run_with_target(pid, record, mode, catch_threshold_ns, vec![], None, 1)
+}
+
+fn run_with_target(
+    pid:                u32,
+    record:             Option<String>,
+    mode:               ActiveMode,
+    catch_threshold_ns: u64,
+    extra_pids:         Vec<u32>,
+    target_label:       Option<String>,
+    tracked_count:      usize,
+) -> Result<()> {
     // ── resolve target ────────────────────────────────────────────────────────
     let target = PidTarget::attach(pid)?;
     let comm   = crate::proc::stat::Stat::read(pid)
@@ -149,6 +193,8 @@ fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_thres
         let mut s = AppState::new(pid, comm.clone());
         s.mode = mode;
         s.catch.threshold_ns = catch_threshold_ns;
+        s.target_label  = target_label;
+        s.tracked_count = tracked_count.max(1);
         s
     }));
     let stop  = Arc::new(AtomicBool::new(false));
@@ -158,6 +204,12 @@ fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_thres
 
     match ebpf_result {
         Ok(mut ebpf) => {
+            // Seed the extra pids (tree descendants, cgroup members).
+            if !extra_pids.is_empty() {
+                if let Err(e) = ebpf.track_pids(&extra_pids, pid) {
+                    eprintln!("ghost: seeding extra pids failed: {e}");
+                }
+            }
             // Attach probes needed for the active mode. Lock mode needs futex
             // tracepoints; watch mode needs the sys_enter/exit + sched_switch
             // set. Track probes (fork/exit) are always useful.

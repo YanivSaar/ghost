@@ -69,9 +69,12 @@ fn render_header(f: &mut Frame, area: Rect, state: &AppState) {
     let threads = state.snap.as_ref().map(|s| s.status.threads).unwrap_or(0);
     let rss = state.snap.as_ref().map(|s| s.status.vm_rss_kb).unwrap_or(0);
 
+    let label = state.target_label.as_deref().map(|l| format!(" [ {l} ] ")).unwrap_or_default();
+
     let line = Line::from(vec![
         Span::styled(format!(" {} ", state.comm), Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         Span::raw(format!("pid:{} ", state.pid)),
+        Span::styled(label, Style::default().fg(Color::Magenta)),
         Span::raw(format!("threads:{threads}  ")),
         Span::raw(format!("rss:{} ", fmt_kb(rss))),
         ebpf_badge,

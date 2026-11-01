@@ -21,6 +21,12 @@ pub struct AppState {
     pub mode:       ActiveMode,
     pub ebpf_ok:    bool,
     pub ebpf_error: Option<String>,
+    /// Human-visible target label for tree/cgroup modes
+    /// (e.g. "tree(1234)" or "/system.slice/foo.service"). None → pid+comm.
+    pub target_label:  Option<String>,
+    /// Count of PIDs currently seeded into eBPF PID_SET; grows via in-kernel
+    /// fork propagation but we only know the seed count unless we re-read.
+    pub tracked_count: usize,
 
     pub watch:      WatchState,
     pub lock:       LockLensState,
@@ -138,6 +144,8 @@ impl AppState {
             mode: ActiveMode::Watch,
             ebpf_ok: false,
             ebpf_error: None,
+            target_label: None,
+            tracked_count: 1,
             watch: WatchState::default(),
             lock:  LockLensState::default(),
             catch: CatchLensState::default(),
