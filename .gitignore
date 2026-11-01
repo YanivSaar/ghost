@@ -21,6 +21,9 @@ Cargo.lock
 *.swo
 *~
 
+# Local session progress tracker (never pushed)
+.ghost-progress.md
+
 # Environment / secrets
 .env
 .env.*
