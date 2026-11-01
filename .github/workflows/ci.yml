@@ -37,11 +37,14 @@ jobs:
       - name: rustfmt
         run: cargo fmt --all -- --check
 
+      # ghost-ebpf is a no_std BPF-target crate; host-side clippy/check
+      # against it conflicts with std's lang-items (E0152). Build it via
+      # ghost's build.rs instead, and clippy only the host crates.
       - name: clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p ghost -p ghost-common --all-targets -- -D warnings
 
       - name: build
-        run: cargo build --workspace --verbose
+        run: cargo build -p ghost --release --verbose
 
       - name: test
-        run: cargo test --workspace --verbose
+        run: cargo test -p ghost --verbose

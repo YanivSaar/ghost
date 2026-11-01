@@ -14,7 +14,11 @@ use ghost::{modes, supervisor};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug)]
-#[command(name = "ghost", version, about = "Attach to a process, and see everything.")]
+#[command(
+    name = "ghost",
+    version,
+    about = "Attach to a process, and see everything."
+)]
 struct Cli {
     /// PID to snapshot (shorthand for `ghost snap <pid>`).
     pid: Option<u32>,
@@ -40,7 +44,10 @@ struct Cli {
 }
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
-enum Theme { Dense, Minimal }
+enum Theme {
+    Dense,
+    Minimal,
+}
 
 #[derive(Subcommand, Debug)]
 enum Cmd {
@@ -55,13 +62,21 @@ enum Cmd {
     /// Lock contention map.
     Lock { pid: u32 },
     /// Arm a latency tripwire and capture the spike.
-    Catch { pid: u32, #[arg(long)] above: String },
+    Catch {
+        pid: u32,
+        #[arg(long)]
+        above: String,
+    },
     /// Startup archaeology from execve to first work.
     Cold { cmd: Vec<String> },
     /// Attribute jitter to IRQ/NMI/preemption sources.
     Jitter { pid: u32 },
     /// Replay a recorded session.
-    Replay { file: String, #[arg(long)] seek: Option<String> },
+    Replay {
+        file: String,
+        #[arg(long)]
+        seek: Option<String>,
+    },
     /// Compare two recorded sessions.
     Diff { a: String, b: String },
 }
@@ -70,31 +85,29 @@ enum Cmd {
 /// Accepts suffixes: ns, us, µs, ms, s. Bare integers are interpreted as ns.
 pub(crate) fn parse_duration_ns(s: &str) -> Result<u64, String> {
     let s = s.trim();
-    if s.is_empty() { return Err("empty".into()); }
+    if s.is_empty() {
+        return Err("empty".into());
+    }
 
-    let (num_str, mult): (&str, u64) =
-        if let Some(rest) = s.strip_suffix("ns") { (rest, 1) }
-        else if let Some(rest) = s.strip_suffix("us") { (rest, 1_000) }
-        else if let Some(rest) = s.strip_suffix("µs") { (rest, 1_000) }
-        else if let Some(rest) = s.strip_suffix("ms") { (rest, 1_000_000) }
-        else if let Some(rest) = s.strip_suffix('s')  { (rest, 1_000_000_000) }
-        else { (s, 1) };
+    let (num_str, mult): (&str, u64) = if let Some(rest) = s.strip_suffix("ns") {
+        (rest, 1)
+    } else if let Some(rest) = s.strip_suffix("us") {
+        (rest, 1_000)
+    } else if let Some(rest) = s.strip_suffix("µs") {
+        (rest, 1_000)
+    } else if let Some(rest) = s.strip_suffix("ms") {
+        (rest, 1_000_000)
+    } else if let Some(rest) = s.strip_suffix('s') {
+        (rest, 1_000_000_000)
+    } else {
+        (s, 1)
+    };
 
-    let n: u64 = num_str.trim().parse().map_err(|_| format!("invalid number '{num_str}'"))?;
+    let n: u64 = num_str
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid number '{num_str}'"))?;
     n.checked_mul(mult).ok_or_else(|| "overflow".into())
-}
-
-#[cfg(test)]
-mod parse_tests {
-    use super::parse_duration_ns;
-    #[test] fn ns()     { assert_eq!(parse_duration_ns("500ns").unwrap(), 500); }
-    #[test] fn us()     { assert_eq!(parse_duration_ns("500us").unwrap(), 500_000); }
-    #[test] fn us_utf8(){ assert_eq!(parse_duration_ns("500µs").unwrap(), 500_000); }
-    #[test] fn ms()     { assert_eq!(parse_duration_ns("10ms").unwrap(), 10_000_000); }
-    #[test] fn s()      { assert_eq!(parse_duration_ns("2s").unwrap(), 2_000_000_000); }
-    #[test] fn bare()   { assert_eq!(parse_duration_ns("1000").unwrap(), 1000); }
-    #[test] fn empty()  { assert!(parse_duration_ns("").is_err()); }
-    #[test] fn bad()    { assert!(parse_duration_ns("abc").is_err()); }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -110,13 +123,11 @@ fn main() -> anyhow::Result<()> {
             // Default: live watch dashboard. Falls back to proc-only if no eBPF caps.
             supervisor::run(pid, cli.record)
         }
-        Some(Cmd::Watch  { pid }) => {
-            supervisor::run(pid, cli.record)
-        }
-        Some(Cmd::Tree   { pid })    => supervisor::run_tree(pid, cli.record),
+        Some(Cmd::Watch { pid }) => supervisor::run(pid, cli.record),
+        Some(Cmd::Tree { pid }) => supervisor::run_tree(pid, cli.record),
         Some(Cmd::Cgroup { target }) => supervisor::run_cgroup(target, cli.record),
-        Some(Cmd::Lock   { pid }) => supervisor::run_lock(pid, cli.record),
-        Some(Cmd::Catch  { pid, above }) => {
+        Some(Cmd::Lock { pid }) => supervisor::run_lock(pid, cli.record),
+        Some(Cmd::Catch { pid, above }) => {
             let threshold_ns = parse_duration_ns(&above).unwrap_or_else(|e| {
                 eprintln!("ghost: --above: {e} (expected e.g. 10ms, 500us, 1s)");
                 std::process::exit(1);
@@ -127,9 +138,46 @@ fn main() -> anyhow::Result<()> {
             }
             supervisor::run_catch(pid, cli.record, threshold_ns)
         }
-        Some(Cmd::Cold   { cmd }) => supervisor::run_cold(cmd, cli.record),
+        Some(Cmd::Cold { cmd }) => supervisor::run_cold(cmd, cli.record),
         Some(Cmd::Jitter { pid }) => supervisor::run_jitter(pid, cli.record),
         Some(Cmd::Replay { file, seek }) => supervisor::run_replay(file, seek),
-        Some(Cmd::Diff   { a, b })       => supervisor::run_diff(a, b),
+        Some(Cmd::Diff { a, b }) => supervisor::run_diff(a, b),
+    }
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::parse_duration_ns;
+    #[test]
+    fn ns() {
+        assert_eq!(parse_duration_ns("500ns").unwrap(), 500);
+    }
+    #[test]
+    fn us() {
+        assert_eq!(parse_duration_ns("500us").unwrap(), 500_000);
+    }
+    #[test]
+    fn us_utf8() {
+        assert_eq!(parse_duration_ns("500µs").unwrap(), 500_000);
+    }
+    #[test]
+    fn ms() {
+        assert_eq!(parse_duration_ns("10ms").unwrap(), 10_000_000);
+    }
+    #[test]
+    fn s() {
+        assert_eq!(parse_duration_ns("2s").unwrap(), 2_000_000_000);
+    }
+    #[test]
+    fn bare() {
+        assert_eq!(parse_duration_ns("1000").unwrap(), 1000);
+    }
+    #[test]
+    fn empty() {
+        assert!(parse_duration_ns("").is_err());
+    }
+    #[test]
+    fn bad() {
+        assert!(parse_duration_ns("abc").is_err());
     }
 }

@@ -1,18 +1,21 @@
 //! Single-PID target. Seeds PID_SET with one entry.
 //! PID-reuse guard: compare start_time from /proc/{pid}/stat on each liveness check.
 
-use anyhow::Result;
 use crate::proc::stat::Stat;
+use anyhow::Result;
 
 pub struct PidTarget {
-    pub pid:        u32,
-    pub start_time: u64,   // from /proc/{pid}/stat; guards against PID reuse
+    pub pid: u32,
+    pub start_time: u64, // from /proc/{pid}/stat; guards against PID reuse
 }
 
 impl PidTarget {
     pub fn attach(pid: u32) -> Result<Self> {
         let stat = Stat::read(pid)?;
-        Ok(Self { pid, start_time: stat.start_time })
+        Ok(Self {
+            pid,
+            start_time: stat.start_time,
+        })
     }
 
     pub fn is_alive(&self) -> bool {
@@ -46,7 +49,10 @@ mod tests {
         let pid = std::process::id();
         let target = PidTarget { pid, start_time: 0 };
         // start_time=0 never matches a real process's start_time.
-        assert!(!target.is_alive(), "mismatched start_time should return false");
+        assert!(
+            !target.is_alive(),
+            "mismatched start_time should return false"
+        );
     }
 
     #[test]

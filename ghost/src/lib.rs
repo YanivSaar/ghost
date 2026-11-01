@@ -4,11 +4,23 @@
 //! here so integration tests, benchmarks, and future tooling can reach
 //! the internals.
 
-pub mod supervisor;
-pub mod state;
-pub mod target;
+// Clippy relaxations: cosmetic lints that don't reflect bugs and would
+// churn a lot of unrelated code to silence. We'll revisit during the
+// stability pass.
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::uninlined_format_args)]
+// Descending sort via sort_by reads clearer than sort_by_key(Reverse(_)).
+#![allow(clippy::unnecessary_sort_by)]
+// `x / y` with a guarded `if y > 0` is intentional and clearer than
+// `x.checked_div(y).unwrap_or(0)` when the guard already conveys intent.
+#![allow(clippy::manual_checked_ops)]
+
 pub mod ebpf;
-pub mod proc;
 pub mod modes;
+pub mod proc;
 pub mod session;
+pub mod state;
+pub mod supervisor;
+pub mod target;
 pub mod tui;

@@ -11,7 +11,11 @@ pub fn read(pid: u32) -> Result<String> {
 
 pub(crate) fn normalise(raw: &str) -> String {
     let s = raw.trim();
-    if s.is_empty() || s == "0" { "running".to_string() } else { s.to_string() }
+    if s.is_empty() || s == "0" {
+        "running".to_string()
+    } else {
+        s.to_string()
+    }
 }
 
 #[cfg(test)]

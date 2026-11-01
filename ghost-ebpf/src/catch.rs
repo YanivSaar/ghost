@@ -19,7 +19,7 @@ use crate::{CAPTURE, CATCH_INFLIGHT, CFG, PID_SET};
 
 #[tracepoint]
 pub fn sys_enter_catch(ctx: TracePointContext) -> u32 {
-    unsafe { try_enter(ctx) }.unwrap_or(0) as u32
+    unsafe { try_enter(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_enter(ctx: TracePointContext) -> Result<u32, i64> {
@@ -41,7 +41,7 @@ unsafe fn try_enter(ctx: TracePointContext) -> Result<u32, i64> {
 
 #[tracepoint]
 pub fn sys_exit_catch(ctx: TracePointContext) -> u32 {
-    unsafe { try_exit(ctx) }.unwrap_or(0) as u32
+    unsafe { try_exit(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_exit(ctx: TracePointContext) -> Result<u32, i64> {
@@ -73,12 +73,12 @@ unsafe fn try_exit(ctx: TracePointContext) -> Result<u32, i64> {
     }
 
     let rec = CatchRecord {
-        kind:     EventKind::CatchHit as u8,
-        _pad:     [0; 3],
-        pid:      tgid,
+        kind: EventKind::CatchHit as u8,
+        _pad: [0; 3],
+        pid: tgid,
         tid,
-        nr:       nr as u32,
-        ts_ns:    now,
+        nr: nr as u32,
+        ts_ns: now,
         delta_ns: delta,
     };
 

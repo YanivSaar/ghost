@@ -12,13 +12,13 @@ pub enum EventKind {
     SyscallExit = 1,
     SchedSwitch = 2,
     SchedWakeup = 3,
-    FutexWait   = 4,
-    FutexWake   = 5,
-    IrqSpan     = 6,
-    Fork        = 7,
-    Exit        = 8,
-    ExecPhase   = 9,
-    CatchHit    = 10,
+    FutexWait = 4,
+    FutexWake = 5,
+    IrqSpan = 6,
+    Fork = 7,
+    Exit = 8,
+    ExecPhase = 9,
+    CatchHit = 10,
 }
 
 /// Per-tracked-PID metadata stored as the value of the PID_SET map.
@@ -32,15 +32,15 @@ pub struct TrackInfo {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SyscallKey {
     pub pid: u32,
-    pub nr:  u32,
+    pub nr: u32,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SyscallStat {
-    pub count:    u64,
+    pub count: u64,
     pub total_ns: u64,
-    pub max_ns:   u64,
+    pub max_ns: u64,
 }
 
 /// Per-(pid, syscall) startup stat. first_ts_ns captures the first time
@@ -50,7 +50,7 @@ pub struct SyscallStat {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ColdStat {
     pub first_ts_ns: u64,
-    pub count:       u64,
+    pub count: u64,
 }
 
 /// Per-IRQ (or per-softirq-vec) occupancy stat accumulated while the tracked
@@ -59,19 +59,19 @@ pub struct ColdStat {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IrqStat {
-    pub count:    u64,
+    pub count: u64,
     pub total_ns: u64,
-    pub max_ns:   u64,
+    pub max_ns: u64,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LockStat {
-    pub waits:         u64,
+    pub waits: u64,
     pub total_wait_ns: u64,
-    pub max_wait_ns:   u64,
-    pub holder_tid:    u32,
-    pub max_queue:     u32,
+    pub max_wait_ns: u64,
+    pub holder_tid: u32,
+    pub max_queue: u32,
 }
 
 /// Per-TID in-flight futex wait: enter timestamp + user-space futex address.
@@ -87,12 +87,15 @@ pub struct FutexInflight {
 #[derive(Clone, Copy, Debug)]
 pub struct Config {
     pub event_threshold_ns: u64,
-    pub catch_above_ns:     u64,
+    pub catch_above_ns: u64,
 }
 
 impl Default for Config {
     fn default() -> Self {
-        Self { event_threshold_ns: 1_000_000, catch_above_ns: 0 }
+        Self {
+            event_threshold_ns: 1_000_000,
+            catch_above_ns: 0,
+        }
     }
 }
 
@@ -100,25 +103,25 @@ impl Default for Config {
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct SchedSwitchRecord {
-    pub kind:        u8,    // EventKind::SchedSwitch
-    pub involuntary: u8,    // 1 = preempted (prev_state == 0), 0 = voluntary
-    pub _pad:        [u8; 2],
-    pub pid:         u32,   // tgid of the tracked process
-    pub tid:         u32,   // tid that was switched out
-    pub _pad2:       u32,
-    pub ts_ns:       u64,
-    pub next_pid:    u32,
-    pub _pad3:       u32,
-    pub next_comm:   [u8; 16],
+    pub kind: u8,        // EventKind::SchedSwitch
+    pub involuntary: u8, // 1 = preempted (prev_state == 0), 0 = voluntary
+    pub _pad: [u8; 2],
+    pub pid: u32, // tgid of the tracked process
+    pub tid: u32, // tid that was switched out
+    pub _pad2: u32,
+    pub ts_ns: u64,
+    pub next_pid: u32,
+    pub _pad3: u32,
+    pub next_comm: [u8; 16],
 }
 
 /// Ring-buffer record: process exit (kind = Exit = 8).
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ExitRecord {
-    pub kind: u8,    // EventKind::Exit
-    pub _pad:  [u8; 3],
-    pub pid:  u32,
+    pub kind: u8, // EventKind::Exit
+    pub _pad: [u8; 3],
+    pub pid: u32,
 }
 
 /// Capture-ring record: a syscall whose latency exceeded cfg.catch_above_ns.
@@ -126,13 +129,13 @@ pub struct ExitRecord {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CatchRecord {
-    pub kind:     u8,    // EventKind::CatchHit = 10
-    pub _pad:     [u8; 3],
-    pub pid:      u32,   // tgid of the tracked process
-    pub tid:      u32,   // thread that tripped the wire
-    pub nr:       u32,   // syscall number
-    pub ts_ns:    u64,   // exit timestamp (monotonic ns)
-    pub delta_ns: u64,   // enter→exit elapsed
+    pub kind: u8, // EventKind::CatchHit = 10
+    pub _pad: [u8; 3],
+    pub pid: u32,      // tgid of the tracked process
+    pub tid: u32,      // thread that tripped the wire
+    pub nr: u32,       // syscall number
+    pub ts_ns: u64,    // exit timestamp (monotonic ns)
+    pub delta_ns: u64, // enter→exit elapsed
 }
 
 /// Ring-buffer record: an exec phase marker (used by `cold`).
@@ -143,14 +146,14 @@ pub struct CatchRecord {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ExecPhaseRecord {
-    pub kind:  u8,     // EventKind::ExecPhase = 9
+    pub kind: u8, // EventKind::ExecPhase = 9
     pub phase: u8,
-    pub _pad:  [u8; 2],
-    pub pid:   u32,
-    pub tid:   u32,
+    pub _pad: [u8; 2],
+    pub pid: u32,
+    pub tid: u32,
     pub _pad2: u32,
     pub ts_ns: u64,
-    pub nr:    u32,    // syscall nr that caused the transition (0 for execve-return)
+    pub nr: u32, // syscall nr that caused the transition (0 for execve-return)
     pub _pad3: u32,
 }
 

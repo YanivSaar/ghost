@@ -15,11 +15,19 @@ pub struct MapRegion {
 }
 
 impl MapRegion {
-    pub fn size_kb(&self) -> u64 { (self.end - self.start) / 1024 }
+    pub fn size_kb(&self) -> u64 {
+        (self.end - self.start) / 1024
+    }
 
-    pub fn is_exec(&self) -> bool { self.perms.contains('x') }
-    pub fn is_write(&self) -> bool { self.perms.contains('w') }
-    pub fn is_anon(&self) -> bool { self.pathname.is_empty() || self.pathname == "[heap]" || self.pathname == "[stack]" }
+    pub fn is_exec(&self) -> bool {
+        self.perms.contains('x')
+    }
+    pub fn is_write(&self) -> bool {
+        self.perms.contains('w')
+    }
+    pub fn is_anon(&self) -> bool {
+        self.pathname.is_empty() || self.pathname == "[heap]" || self.pathname == "[stack]"
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -50,33 +58,46 @@ pub(crate) fn parse_maps(raw: &str) -> Vec<MapRegion> {
 
 fn parse_map_line(line: &str) -> Option<MapRegion> {
     let mut parts = line.splitn(6, ' ');
-    let range   = parts.next()?;
-    let perms   = parts.next()?.to_string();
-    let offset  = u64::from_str_radix(parts.next()?, 16).ok()?;
-    let dev     = parts.next()?.to_string();
-    let inode   = parts.next()?.parse().ok()?;
-    let pathname = parts.next().map(|s| s.trim().to_string()).unwrap_or_default();
+    let range = parts.next()?;
+    let perms = parts.next()?.to_string();
+    let offset = u64::from_str_radix(parts.next()?, 16).ok()?;
+    let dev = parts.next()?.to_string();
+    let inode = parts.next()?.parse().ok()?;
+    let pathname = parts
+        .next()
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
 
     let (start_s, end_s) = range.split_once('-')?;
     let start = u64::from_str_radix(start_s, 16).ok()?;
-    let end   = u64::from_str_radix(end_s, 16).ok()?;
+    let end = u64::from_str_radix(end_s, 16).ok()?;
 
-    Some(MapRegion { start, end, perms, offset, dev, inode, pathname })
+    Some(MapRegion {
+        start,
+        end,
+        perms,
+        offset,
+        dev,
+        inode,
+        pathname,
+    })
 }
 
 pub(crate) fn parse_smaps_rollup(raw: &str) -> SmasRollup {
     let mut r = SmasRollup::default();
     for line in raw.lines() {
-        let Some((key, val)) = line.split_once(':') else { continue };
+        let Some((key, val)) = line.split_once(':') else {
+            continue;
+        };
         let v = parse_kb(val.trim());
         match key.trim() {
-            "Rss"          => r.rss_kb = v,
-            "Pss"          => r.pss_kb = v,
+            "Rss" => r.rss_kb = v,
+            "Pss" => r.pss_kb = v,
             "Shared_Clean" => r.shared_clean_kb = v,
             "Shared_Dirty" => r.shared_dirty_kb = v,
             "Private_Clean" => r.private_clean_kb = v,
             "Private_Dirty" => r.private_dirty_kb = v,
-            "Swap"         => r.swap_kb = v,
+            "Swap" => r.swap_kb = v,
             _ => {}
         }
     }
@@ -84,7 +105,10 @@ pub(crate) fn parse_smaps_rollup(raw: &str) -> SmasRollup {
 }
 
 fn parse_kb(val: &str) -> u64 {
-    val.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0)
+    val.split_whitespace()
+        .next()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -103,10 +127,10 @@ mod tests {
         assert_eq!(regions.len(), 4);
 
         let r0 = &regions[0];
-        assert_eq!(r0.start,    0x7f1a00000000);
-        assert_eq!(r0.end,      0x7f1a00001000);
-        assert_eq!(r0.perms,    "r-xp");
-        assert_eq!(r0.inode,    123456);
+        assert_eq!(r0.start, 0x7f1a00000000);
+        assert_eq!(r0.end, 0x7f1a00001000);
+        assert_eq!(r0.perms, "r-xp");
+        assert_eq!(r0.inode, 123456);
         assert_eq!(r0.pathname, "/usr/lib/libc.so.6");
         assert!(r0.is_exec());
         assert!(!r0.is_write());
@@ -154,13 +178,13 @@ Private_Dirty:  1024 kB\n\
 Swap:            768 kB\n";
 
         let r = parse_smaps_rollup(raw);
-        assert_eq!(r.rss_kb,          8192);
-        assert_eq!(r.pss_kb,          4096);
-        assert_eq!(r.shared_clean_kb,  512);
-        assert_eq!(r.shared_dirty_kb,  256);
+        assert_eq!(r.rss_kb, 8192);
+        assert_eq!(r.pss_kb, 4096);
+        assert_eq!(r.shared_clean_kb, 512);
+        assert_eq!(r.shared_dirty_kb, 256);
         assert_eq!(r.private_clean_kb, 128);
         assert_eq!(r.private_dirty_kb, 1024);
-        assert_eq!(r.swap_kb,          768);
+        assert_eq!(r.swap_kb, 768);
     }
 
     #[test]

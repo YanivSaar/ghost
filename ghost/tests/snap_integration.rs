@@ -14,9 +14,7 @@ fn ghost_bin() -> String {
 #[test]
 fn snap_current_process_exits_zero() {
     let pid = std::process::id().to_string();
-    let status = Command::new(ghost_bin())
-        .args(["snap", &pid])
-        .status();
+    let status = Command::new(ghost_bin()).args(["snap", &pid]).status();
 
     match status {
         Ok(s) => assert!(s.success(), "ghost snap exited with non-zero status: {s}"),
@@ -48,9 +46,7 @@ fn snap_nonexistent_pid_exits_nonzero() {
 #[test]
 fn snap_output_contains_stat_section() {
     let pid = std::process::id().to_string();
-    let output = Command::new(ghost_bin())
-        .args(["snap", &pid])
-        .output();
+    let output = Command::new(ghost_bin()).args(["snap", &pid]).output();
 
     match output {
         Ok(out) => {

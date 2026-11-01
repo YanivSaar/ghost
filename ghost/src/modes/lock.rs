@@ -20,13 +20,19 @@ pub struct LockMode {
 }
 
 impl LockMode {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Mode for LockMode {
-    fn id(&self) -> ModeId { ModeId::Lock }
+    fn id(&self) -> ModeId {
+        ModeId::Lock
+    }
 
-    fn probes(&self) -> &'static [Probe] { LOCK_PROBES }
+    fn probes(&self) -> &'static [Probe] {
+        LOCK_PROBES
+    }
 
     fn on_event(&mut self, _kind: EventKind, _bytes: &[u8], _now: u64) {
         // Lock lens aggregates via the LOCK_STAT map, not the EVENTS ring.
@@ -55,8 +61,14 @@ mod tests {
         let m = LockMode::new();
         let probes = m.probes();
         assert_eq!(probes.len(), 2);
-        assert!(matches!(probes[0], Probe::Tracepoint("syscalls", "sys_enter_futex")));
-        assert!(matches!(probes[1], Probe::Tracepoint("syscalls", "sys_exit_futex")));
+        assert!(matches!(
+            probes[0],
+            Probe::Tracepoint("syscalls", "sys_enter_futex")
+        ));
+        assert!(matches!(
+            probes[1],
+            Probe::Tracepoint("syscalls", "sys_exit_futex")
+        ));
     }
 
     #[test]

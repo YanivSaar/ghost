@@ -7,7 +7,7 @@ use super::mode::{Mode, ModeId, ModeView, Probe};
 static WATCH_PROBES: &[Probe] = &[
     Probe::Tracepoint("raw_syscalls", "sys_enter"),
     Probe::Tracepoint("raw_syscalls", "sys_exit"),
-    Probe::Tracepoint("sched",        "sched_switch"),
+    Probe::Tracepoint("sched", "sched_switch"),
 ];
 
 /// Per-mode in-process state for the watch lens.
@@ -15,27 +15,36 @@ static WATCH_PROBES: &[Probe] = &[
 /// we track sched events here as they arrive from the ring buffer.
 #[derive(Debug, Default)]
 pub struct WatchMode {
-    pub voluntary_ctx:   u64,
+    pub voluntary_ctx: u64,
     pub involuntary_ctx: u64,
-    pub events_seen:     u64,
+    pub events_seen: u64,
 }
 
 impl WatchMode {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Mode for WatchMode {
-    fn id(&self) -> ModeId { ModeId::Watch }
+    fn id(&self) -> ModeId {
+        ModeId::Watch
+    }
 
-    fn probes(&self) -> &'static [Probe] { WATCH_PROBES }
+    fn probes(&self) -> &'static [Probe] {
+        WATCH_PROBES
+    }
 
     fn on_event(&mut self, kind: EventKind, bytes: &[u8], _now: u64) {
-        if kind != EventKind::SchedSwitch { return; }
-        if bytes.len() < core::mem::size_of::<SchedSwitchRecord>() { return; }
+        if kind != EventKind::SchedSwitch {
+            return;
+        }
+        if bytes.len() < core::mem::size_of::<SchedSwitchRecord>() {
+            return;
+        }
 
-        let rec: SchedSwitchRecord = unsafe {
-            core::ptr::read_unaligned(bytes.as_ptr() as *const SchedSwitchRecord)
-        };
+        let rec: SchedSwitchRecord =
+            unsafe { core::ptr::read_unaligned(bytes.as_ptr() as *const SchedSwitchRecord) };
         self.events_seen += 1;
         if rec.involuntary == 1 {
             self.involuntary_ctx += 1;
@@ -66,13 +75,13 @@ mod tests {
         let rec = SchedSwitchRecord {
             kind: EventKind::SchedSwitch as u8,
             involuntary,
-            _pad:    [0; 2],
-            pid:     1234,
-            tid:     1234,
-            _pad2:   0,
-            ts_ns:   1_000_000,
+            _pad: [0; 2],
+            pid: 1234,
+            tid: 1234,
+            _pad2: 0,
+            ts_ns: 1_000_000,
             next_pid: 5678,
-            _pad3:   0,
+            _pad3: 0,
             next_comm: *b"bash\0\0\0\0\0\0\0\0\0\0\0\0",
         };
         let mut v = vec![0u8; core::mem::size_of::<SchedSwitchRecord>()];
@@ -85,8 +94,14 @@ mod tests {
         let m = WatchMode::new();
         let probes = m.probes();
         assert_eq!(probes.len(), 3);
-        assert!(matches!(probes[0], Probe::Tracepoint("raw_syscalls", "sys_enter")));
-        assert!(matches!(probes[2], Probe::Tracepoint("sched", "sched_switch")));
+        assert!(matches!(
+            probes[0],
+            Probe::Tracepoint("raw_syscalls", "sys_enter")
+        ));
+        assert!(matches!(
+            probes[2],
+            Probe::Tracepoint("sched", "sched_switch")
+        ));
     }
 
     #[test]

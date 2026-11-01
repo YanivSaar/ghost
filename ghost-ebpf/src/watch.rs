@@ -18,7 +18,7 @@ use crate::{EVENTS, INFLIGHT, PID_SET, SYSCALL_STAT};
 
 #[tracepoint]
 pub fn sys_enter(ctx: TracePointContext) -> u32 {
-    unsafe { try_sys_enter(ctx) }.unwrap_or(0) as u32
+    unsafe { try_sys_enter(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_sys_enter(ctx: TracePointContext) -> Result<u32, i64> {
@@ -42,7 +42,7 @@ unsafe fn try_sys_enter(ctx: TracePointContext) -> Result<u32, i64> {
 
 #[tracepoint]
 pub fn sys_exit(ctx: TracePointContext) -> u32 {
-    unsafe { try_sys_exit(ctx) }.unwrap_or(0) as u32
+    unsafe { try_sys_exit(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_sys_exit(ctx: TracePointContext) -> Result<u32, i64> {
@@ -65,14 +65,23 @@ unsafe fn try_sys_exit(ctx: TracePointContext) -> Result<u32, i64> {
     let now = bpf_ktime_get_ns();
     let delta = now.saturating_sub(enter_ts);
 
-    let skey = SyscallKey { pid: tgid, nr: nr as u32 };
+    let skey = SyscallKey {
+        pid: tgid,
+        nr: nr as u32,
+    };
 
     if let Some(stat) = SYSCALL_STAT.get_ptr_mut(&skey) {
-        (*stat).count    += 1;
+        (*stat).count += 1;
         (*stat).total_ns += delta;
-        if delta > (*stat).max_ns { (*stat).max_ns = delta; }
+        if delta > (*stat).max_ns {
+            (*stat).max_ns = delta;
+        }
     } else {
-        let stat = SyscallStat { count: 1, total_ns: delta, max_ns: delta };
+        let stat = SyscallStat {
+            count: 1,
+            total_ns: delta,
+            max_ns: delta,
+        };
         SYSCALL_STAT.insert(&skey, &stat, 0).ok();
     }
 
@@ -83,7 +92,7 @@ unsafe fn try_sys_exit(ctx: TracePointContext) -> Result<u32, i64> {
 
 #[tracepoint]
 pub fn sched_switch(ctx: TracePointContext) -> u32 {
-    unsafe { try_sched_switch(ctx) }.unwrap_or(0) as u32
+    unsafe { try_sched_switch(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_sched_switch(ctx: TracePointContext) -> Result<u32, i64> {
@@ -94,7 +103,7 @@ unsafe fn try_sched_switch(ctx: TracePointContext) -> Result<u32, i64> {
     }
 
     let prev_state: i64 = ctx.read_at(32)?;
-    let next_pid: u32   = ctx.read_at(56)?;
+    let next_pid: u32 = ctx.read_at(56)?;
     let next_comm: [u8; 16] = ctx.read_at(40)?;
     let ts = bpf_ktime_get_ns();
 
@@ -104,13 +113,13 @@ unsafe fn try_sched_switch(ctx: TracePointContext) -> Result<u32, i64> {
     // We're on the CPU that did the switch; tid == prev_pid here.
     let tgid_tid = bpf_get_current_pid_tgid();
     let tgid = (tgid_tid >> 32) as u32;
-    let tid  = tgid_tid as u32;
+    let tid = tgid_tid as u32;
 
     let rec = SchedSwitchRecord {
-        kind: 2,  // EventKind::SchedSwitch
+        kind: 2, // EventKind::SchedSwitch
         involuntary,
-        _pad:  [0; 2],
-        pid:   tgid,
+        _pad: [0; 2],
+        pid: tgid,
         tid,
         _pad2: 0,
         ts_ns: ts,

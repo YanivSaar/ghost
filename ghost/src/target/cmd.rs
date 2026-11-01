@@ -23,11 +23,11 @@ impl CmdHandle {
         }
 
         // Build execvp argv (null-terminated).
-        let c_argv: Vec<CString> = argv.iter()
+        let c_argv: Vec<CString> = argv
+            .iter()
             .map(|s| CString::new(s.as_str()).unwrap())
             .collect();
-        let mut c_argv_ptrs: Vec<*const libc::c_char> =
-            c_argv.iter().map(|s| s.as_ptr()).collect();
+        let mut c_argv_ptrs: Vec<*const libc::c_char> = c_argv.iter().map(|s| s.as_ptr()).collect();
         c_argv_ptrs.push(std::ptr::null());
 
         // Fork.
@@ -58,7 +58,9 @@ impl CmdHandle {
             bail!("ghost cold: child did not stop (status={status})");
         }
 
-        Ok(Self { pid: pid as libc::pid_t })
+        Ok(Self {
+            pid: pid as libc::pid_t,
+        })
     }
 
     /// Resume the stopped child; this is the "launch" instant.

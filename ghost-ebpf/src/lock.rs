@@ -19,15 +19,15 @@ use ghost_common::{FutexInflight, LockStat};
 use crate::{FUTEX_INFLIGHT, LOCK_STAT, PID_SET};
 
 // FUTEX op constants (uapi/linux/futex.h). We mask the low 7 bits.
-const FUTEX_CMD_MASK:    i32 = 0x7f;
-const FUTEX_WAIT:        i32 = 0;
+const FUTEX_CMD_MASK: i32 = 0x7f;
+const FUTEX_WAIT: i32 = 0;
 const FUTEX_WAIT_BITSET: i32 = 9;
 
 // ── sys_enter_futex ─────────────────────────────────────────────────────────
 
 #[tracepoint]
 pub fn sys_enter_futex(ctx: TracePointContext) -> u32 {
-    unsafe { try_sys_enter_futex(ctx) }.unwrap_or(0) as u32
+    unsafe { try_sys_enter_futex(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_sys_enter_futex(ctx: TracePointContext) -> Result<u32, i64> {
@@ -57,7 +57,7 @@ unsafe fn try_sys_enter_futex(ctx: TracePointContext) -> Result<u32, i64> {
 
 #[tracepoint]
 pub fn sys_exit_futex(ctx: TracePointContext) -> u32 {
-    unsafe { try_sys_exit_futex(ctx) }.unwrap_or(0) as u32
+    unsafe { try_sys_exit_futex(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_sys_exit_futex(_ctx: TracePointContext) -> Result<u32, i64> {
@@ -79,16 +79,18 @@ unsafe fn try_sys_exit_futex(_ctx: TracePointContext) -> Result<u32, i64> {
     let uaddr = inflight.uaddr;
 
     if let Some(stat) = LOCK_STAT.get_ptr_mut(&uaddr) {
-        (*stat).waits         += 1;
+        (*stat).waits += 1;
         (*stat).total_wait_ns += delta;
-        if delta > (*stat).max_wait_ns { (*stat).max_wait_ns = delta; }
+        if delta > (*stat).max_wait_ns {
+            (*stat).max_wait_ns = delta;
+        }
     } else {
         let stat = LockStat {
-            waits:         1,
+            waits: 1,
             total_wait_ns: delta,
-            max_wait_ns:   delta,
-            holder_tid:    0,
-            max_queue:     0,
+            max_wait_ns: delta,
+            holder_tid: 0,
+            max_queue: 0,
         };
         LOCK_STAT.insert(&uaddr, &stat, 0).ok();
     }

@@ -10,14 +10,16 @@ use aya_ebpf::{
     macros::map,
     maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, RingBuf},
 };
-use ghost_common::{ColdStat, Config, FutexInflight, IrqStat, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{
+    ColdStat, Config, FutexInflight, IrqStat, LockStat, SyscallKey, SyscallStat, TrackInfo,
+};
 
-mod track;
-mod watch;
-mod lock;
 mod catch;
 mod cold;
 mod jitter;
+mod lock;
+mod track;
+mod watch;
 
 // ---- maps (ARCHITECTURE §5) ------------------------------------------------
 

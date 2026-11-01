@@ -4,7 +4,14 @@
 use ghost_common::EventKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum ModeId { Snap, Watch, Lock, Catch, Cold, Jitter }
+pub enum ModeId {
+    Snap,
+    Watch,
+    Lock,
+    Catch,
+    Cold,
+    Jitter,
+}
 
 /// A probe this mode needs attached; the loader attaches the union across modes.
 #[derive(Clone, Copy, Debug)]
@@ -13,7 +20,10 @@ pub enum Probe {
     Tracepoint(&'static str, &'static str),
     Kprobe(&'static str),
     Kretprobe(&'static str),
-    Uprobe { object: &'static str, symbol: &'static str },
+    Uprobe {
+        object: &'static str,
+        symbol: &'static str,
+    },
 }
 
 /// Immutable snapshot a mode hands the render thread each frame.

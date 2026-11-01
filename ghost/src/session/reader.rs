@@ -1,14 +1,14 @@
 //! Session reader: sequential playback of a .ghost file.
 
+use anyhow::{bail, Context, Result};
+use lz4_flex::decompress_size_prepended;
+use serde_json;
 use std::{
     fs::File,
     io::{BufReader, Read},
 };
-use anyhow::{bail, Context, Result};
-use lz4_flex::decompress_size_prepended;
-use serde_json;
 
-use super::format::{MAGIC, VERSION, SessionMeta};
+use super::format::{SessionMeta, MAGIC, VERSION};
 
 pub struct SessionReader {
     inner: BufReader<File>,
@@ -17,8 +17,7 @@ pub struct SessionReader {
 
 impl SessionReader {
     pub fn open(path: &str) -> Result<Self> {
-        let file = File::open(path)
-            .with_context(|| format!("opening session file {path}"))?;
+        let file = File::open(path).with_context(|| format!("opening session file {path}"))?;
         let mut r = BufReader::new(file);
 
         let mut magic = [0u8; 8];
@@ -43,29 +42,28 @@ impl SessionReader {
 
         let mut meta_bytes = vec![0u8; meta_len];
         r.read_exact(&mut meta_bytes)?;
-        let meta: SessionMeta = serde_json::from_slice(&meta_bytes)
-            .context("deserialising session metadata")?;
+        let meta: SessionMeta =
+            serde_json::from_slice(&meta_bytes).context("deserialising session metadata")?;
 
         Ok(Self { inner: r, meta })
     }
 
     /// Read the next frame. Returns `(kind, ts_delta_us, raw_body)` or None at EOF.
     pub fn next_frame(&mut self) -> Result<Option<(u8, u32, Vec<u8>)>> {
-        let mut header = [0u8; 9];  // kind(1) + ts_delta(4) + len(4)
+        let mut header = [0u8; 9]; // kind(1) + ts_delta(4) + len(4)
         match self.inner.read_exact(&mut header) {
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
             Err(e) => return Err(e.into()),
         }
 
-        let kind     = header[0];
+        let kind = header[0];
         let ts_delta = u32::from_le_bytes(header[1..5].try_into().unwrap());
-        let clen     = u32::from_le_bytes(header[5..9].try_into().unwrap()) as usize;
+        let clen = u32::from_le_bytes(header[5..9].try_into().unwrap()) as usize;
 
         let mut compressed = vec![0u8; clen];
         self.inner.read_exact(&mut compressed)?;
-        let body = decompress_size_prepended(&compressed)
-            .context("decompressing frame body")?;
+        let body = decompress_size_prepended(&compressed).context("decompressing frame body")?;
 
         Ok(Some((kind, ts_delta, body)))
     }

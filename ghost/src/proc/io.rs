@@ -25,16 +25,18 @@ impl Io {
 pub(crate) fn parse(raw: &str) -> Io {
     let mut io = Io::default();
     for line in raw.lines() {
-        let Some((key, val)) = line.split_once(':') else { continue };
+        let Some((key, val)) = line.split_once(':') else {
+            continue;
+        };
         let v: u64 = val.trim().parse().unwrap_or(0);
         match key.trim() {
-            "rchar"                  => io.rchar = v,
-            "wchar"                  => io.wchar = v,
-            "read_bytes"             => io.read_bytes = v,
-            "write_bytes"            => io.write_bytes = v,
-            "syscr"                  => io.syscr = v,
-            "syscw"                  => io.syscw = v,
-            "cancelled_write_bytes"  => io.cancelled_write_bytes = v,
+            "rchar" => io.rchar = v,
+            "wchar" => io.wchar = v,
+            "read_bytes" => io.read_bytes = v,
+            "write_bytes" => io.write_bytes = v,
+            "syscr" => io.syscr = v,
+            "syscw" => io.syscw = v,
+            "cancelled_write_bytes" => io.cancelled_write_bytes = v,
             _ => {}
         }
     }
@@ -57,12 +59,12 @@ cancelled_write_bytes: 512\n";
     #[test]
     fn parses_all_fields() {
         let io = parse(SAMPLE);
-        assert_eq!(io.rchar,                 1048576);
-        assert_eq!(io.wchar,                 524288);
-        assert_eq!(io.syscr,                 256);
-        assert_eq!(io.syscw,                 128);
-        assert_eq!(io.read_bytes,            4096);
-        assert_eq!(io.write_bytes,           2048);
+        assert_eq!(io.rchar, 1048576);
+        assert_eq!(io.wchar, 524288);
+        assert_eq!(io.syscr, 256);
+        assert_eq!(io.syscw, 128);
+        assert_eq!(io.read_bytes, 4096);
+        assert_eq!(io.write_bytes, 2048);
         assert_eq!(io.cancelled_write_bytes, 512);
     }
 

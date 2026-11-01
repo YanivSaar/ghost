@@ -18,15 +18,14 @@ const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 
 /// Systemd unit suffixes we try to resolve.
 const UNIT_SUFFIXES: &[&str] = &[
-    ".service", ".scope", ".slice", ".socket",
-    ".timer",   ".mount", ".path",  ".target",
+    ".service", ".scope", ".slice", ".socket", ".timer", ".mount", ".path", ".target",
 ];
 
 pub struct CgroupTarget {
     /// Absolute cgroup directory on disk.
-    pub path:    PathBuf,
+    pub path: PathBuf,
     /// Short label suitable for the TUI header.
-    pub label:   String,
+    pub label: String,
     /// PIDs currently in the cgroup. Seeded from `<path>/cgroup.procs`.
     pub members: Vec<u32>,
 }
@@ -35,18 +34,26 @@ impl CgroupTarget {
     pub fn attach(spec: &str) -> Result<Self> {
         let path = resolve(spec)?;
         if !path.is_dir() {
-            return Err(anyhow!("ghost cgroup: {} is not a directory", path.display()));
+            return Err(anyhow!(
+                "ghost cgroup: {} is not a directory",
+                path.display()
+            ));
         }
 
         let procs_file = path.join("cgroup.procs");
-        let members = read_procs(&procs_file)
-            .with_context(|| format!("reading {}", procs_file.display()))?;
+        let members =
+            read_procs(&procs_file).with_context(|| format!("reading {}", procs_file.display()))?;
 
-        let label = path.strip_prefix(CGROUP_ROOT)
+        let label = path
+            .strip_prefix(CGROUP_ROOT)
             .map(|p| format!("/{}", p.display()))
             .unwrap_or_else(|_| path.display().to_string());
 
-        Ok(Self { path, label, members })
+        Ok(Self {
+            path,
+            label,
+            members,
+        })
     }
 
     /// Re-read `cgroup.procs` so new processes can be added to the eBPF
@@ -63,7 +70,9 @@ fn resolve(spec: &str) -> Result<PathBuf> {
     // Rule 1: path-shaped input (contains a '/') is treated as a path.
     if spec.contains('/') {
         let p = Path::new(spec);
-        if p.is_absolute() { return Ok(p.to_path_buf()); }
+        if p.is_absolute() {
+            return Ok(p.to_path_buf());
+        }
         return Ok(Path::new(CGROUP_ROOT).join(spec.trim_start_matches('/')));
     }
 
@@ -95,10 +104,15 @@ fn resolve_systemd_unit(unit: &str) -> Result<Option<String>> {
         .output()
         .with_context(|| format!("spawning systemctl for unit {unit}"))?;
     if !out.status.success() {
-        return Err(anyhow!("systemctl show failed: {}", String::from_utf8_lossy(&out.stderr).trim()));
+        return Err(anyhow!(
+            "systemctl show failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { return Ok(None); }
+    if s.is_empty() {
+        return Ok(None);
+    }
     Ok(Some(s))
 }
 
@@ -107,7 +121,9 @@ fn read_procs(path: &Path) -> Result<Vec<u32>> {
     let mut out = Vec::new();
     for line in txt.lines() {
         let s = line.trim();
-        if s.is_empty() { continue; }
+        if s.is_empty() {
+            continue;
+        }
         if let Ok(pid) = s.parse::<u32>() {
             out.push(pid);
         }
@@ -166,7 +182,7 @@ mod tests {
         let mut f = std::fs::File::create(&p).unwrap();
         writeln!(f, "123").unwrap();
         writeln!(f, "456").unwrap();
-        writeln!(f, "").unwrap();
+        writeln!(f).unwrap();
         writeln!(f, "junk").unwrap();
         writeln!(f, "789").unwrap();
         let v = read_procs(&p).unwrap();
@@ -175,13 +191,25 @@ mod tests {
 
     // Tiny temp-dir helper so the test doesn't need the `tempfile` crate.
     struct TempDir(PathBuf);
-    impl TempDir { fn path(&self) -> &Path { &self.0 } }
-    impl Drop for TempDir { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+    impl TempDir {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
     fn tempdir() -> std::io::Result<TempDir> {
-        let base = std::env::temp_dir()
-            .join(format!("ghost-cgroup-{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let base = std::env::temp_dir().join(format!(
+            "ghost-cgroup-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
         std::fs::create_dir_all(&base)?;
         Ok(TempDir(base))
     }

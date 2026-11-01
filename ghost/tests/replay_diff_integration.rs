@@ -21,15 +21,21 @@ fn diff_two_real_sessions_prints_delta() {
     {
         let m = SessionMeta::new(1234, "a-proc", "watch");
         let mut w = SessionWriter::open(a.to_str().unwrap(), &m).unwrap();
-        for _ in 0..3 { w.write_frame(2, &[2u8; 48]).unwrap(); }   // SchedSwitch
-        w.write_frame(8, &[8u8; 8]).unwrap();                      // Exit
+        for _ in 0..3 {
+            w.write_frame(2, &[2u8; 48]).unwrap();
+        } // SchedSwitch
+        w.write_frame(8, &[8u8; 8]).unwrap(); // Exit
         w.flush().unwrap();
     }
     {
         let m = SessionMeta::new(5678, "b-proc", "watch");
         let mut w = SessionWriter::open(b.to_str().unwrap(), &m).unwrap();
-        for _ in 0..5 { w.write_frame(2, &[2u8; 48]).unwrap(); }   // SchedSwitch
-        for _ in 0..2 { w.write_frame(10, &[10u8; 32]).unwrap(); } // CatchHit
+        for _ in 0..5 {
+            w.write_frame(2, &[2u8; 48]).unwrap();
+        } // SchedSwitch
+        for _ in 0..2 {
+            w.write_frame(10, &[10u8; 32]).unwrap();
+        } // CatchHit
         w.flush().unwrap();
     }
 
@@ -37,12 +43,16 @@ fn diff_two_real_sessions_prints_delta() {
         .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
         .output()
         .expect("spawning ghost diff");
-    assert!(out.status.success(), "stderr: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let s = String::from_utf8_lossy(&out.stdout);
     assert!(s.contains("SchedSwitch"), "stdout: {s}");
-    assert!(s.contains("Exit"),        "stdout: {s}");
-    assert!(s.contains("CatchHit"),    "stdout: {s}");
-    assert!(s.contains("+2"),          "expected +2 somewhere: {s}");
+    assert!(s.contains("Exit"), "stdout: {s}");
+    assert!(s.contains("CatchHit"), "stdout: {s}");
+    assert!(s.contains("+2"), "expected +2 somewhere: {s}");
 
     let _ = std::fs::remove_file(&a);
     let _ = std::fs::remove_file(&b);
@@ -72,9 +82,7 @@ fn diff_two_empty_sessions_runs_cleanly() {
     // Either prints an error and exits non-zero, or exits zero with a
     // clean header — both are acceptable, but it must not panic.
     assert!(
-        !out.status.success()
-            || !out.stdout.is_empty()
-            || !out.stderr.is_empty(),
+        !out.status.success() || !out.stdout.is_empty() || !out.stderr.is_empty(),
         "unexpected silent success"
     );
 

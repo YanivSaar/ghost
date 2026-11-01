@@ -9,9 +9,7 @@ use ghost_common::EventKind;
 
 use super::mode::{Mode, ModeId, ModeView, Probe};
 
-static COLD_PROBES: &[Probe] = &[
-    Probe::Tracepoint("raw_syscalls", "sys_enter"),
-];
+static COLD_PROBES: &[Probe] = &[Probe::Tracepoint("raw_syscalls", "sys_enter")];
 
 #[derive(Debug, Default)]
 pub struct ColdMode {
@@ -19,13 +17,19 @@ pub struct ColdMode {
 }
 
 impl ColdMode {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Mode for ColdMode {
-    fn id(&self) -> ModeId { ModeId::Cold }
+    fn id(&self) -> ModeId {
+        ModeId::Cold
+    }
 
-    fn probes(&self) -> &'static [Probe] { COLD_PROBES }
+    fn probes(&self) -> &'static [Probe] {
+        COLD_PROBES
+    }
 
     fn on_event(&mut self, _kind: EventKind, _bytes: &[u8], _now: u64) {
         self.events_seen += 1;
@@ -51,7 +55,10 @@ mod tests {
         let m = ColdMode::new();
         let probes = m.probes();
         assert_eq!(probes.len(), 1);
-        assert!(matches!(probes[0], Probe::Tracepoint("raw_syscalls", "sys_enter")));
+        assert!(matches!(
+            probes[0],
+            Probe::Tracepoint("raw_syscalls", "sys_enter")
+        ));
     }
 
     #[test]

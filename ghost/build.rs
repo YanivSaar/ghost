@@ -3,10 +3,10 @@ use aya_build::{Package, Toolchain};
 fn main() {
     aya_build::build_ebpf(
         [Package {
-            name:                "ghost-ebpf",
-            root_dir:            "../ghost-ebpf",
+            name: "ghost-ebpf",
+            root_dir: "../ghost-ebpf",
             no_default_features: false,
-            features:            &[],
+            features: &[],
         }],
         Toolchain::Nightly,
     )

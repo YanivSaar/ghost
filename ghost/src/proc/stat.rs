@@ -42,10 +42,7 @@ pub(crate) fn parse(raw: &str) -> Result<Stat> {
     let comm_start = raw.find('(').context("no '(' in stat")?;
     let comm_end = raw.rfind(')').context("no ')' in stat")?;
 
-    let pid: u32 = raw[..comm_start]
-        .trim()
-        .parse()
-        .context("pid field")?;
+    let pid: u32 = raw[..comm_start].trim().parse().context("pid field")?;
     let comm = raw[comm_start + 1..comm_end].to_string();
 
     // Everything after ')' is space-delimited; field indices restart at 0 == state.
@@ -53,7 +50,10 @@ pub(crate) fn parse(raw: &str) -> Result<Stat> {
     let fields: Vec<&str> = rest.split_whitespace().collect();
 
     let f = |i: usize, name: &'static str| -> Result<&str> {
-        fields.get(i).copied().with_context(|| format!("stat field {name} missing"))
+        fields
+            .get(i)
+            .copied()
+            .with_context(|| format!("stat field {name} missing"))
     };
 
     let state = f(0, "state")?.chars().next().unwrap_or('?');
@@ -88,6 +88,11 @@ pub(crate) fn parse(raw: &str) -> Result<Stat> {
         nice,
     })
 }
+pub fn ticks_to_secs(ticks: u64) -> f64 {
+    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
+    let hz = if hz <= 0 { 100 } else { hz as u64 };
+    ticks as f64 / hz as f64
+}
 
 /// CPU ticks → seconds using the configured clock tick rate.
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -104,21 +109,21 @@ mod tests {
     #[test]
     fn parses_all_fields() {
         let s = parse(SAMPLE).unwrap();
-        assert_eq!(s.pid,         1234);
-        assert_eq!(s.comm,        "my-proc");
-        assert_eq!(s.state,       'S');
-        assert_eq!(s.ppid,        1000);
-        assert_eq!(s.pgrp,        1234);
-        assert_eq!(s.session,     1234);
+        assert_eq!(s.pid, 1234);
+        assert_eq!(s.comm, "my-proc");
+        assert_eq!(s.state, 'S');
+        assert_eq!(s.ppid, 1000);
+        assert_eq!(s.pgrp, 1234);
+        assert_eq!(s.session, 1234);
         assert_eq!(s.utime_ticks, 50);
         assert_eq!(s.stime_ticks, 30);
-        assert_eq!(s.priority,    20);
-        assert_eq!(s.nice,        0);
+        assert_eq!(s.priority, 20);
+        assert_eq!(s.nice, 0);
         assert_eq!(s.num_threads, 4);
-        assert_eq!(s.start_time,  12345678);
+        assert_eq!(s.start_time, 12345678);
         assert_eq!(s.vsize_bytes, 5242880);
-        assert_eq!(s.rss_pages,   1280);
-        assert_eq!(s.last_cpu,    2);
+        assert_eq!(s.rss_pages, 1280);
+        assert_eq!(s.last_cpu, 2);
     }
 
     #[test]
@@ -129,8 +134,8 @@ mod tests {
             18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 \
             0 0 0 0 0 0 0 0 0";
         let s = parse(line).unwrap();
-        assert_eq!(s.pid,   42);
-        assert_eq!(s.comm,  "(kworker/u:1)");
+        assert_eq!(s.pid, 42);
+        assert_eq!(s.comm, "(kworker/u:1)");
         assert_eq!(s.state, 'R');
     }
 
@@ -141,18 +146,26 @@ mod tests {
             18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 \
             0 0 0 0 0 0 0 0 0";
         let s = parse(line).unwrap();
-        assert_eq!(s.comm,  "my proc name");
+        assert_eq!(s.comm, "my proc name");
         assert_eq!(s.state, 'D');
     }
 
     #[test]
     fn all_state_chars_parsed() {
-        for (ch, _) in [('R', "running"), ('S', "sleeping"), ('D', "disk-wait"),
-                        ('Z', "zombie"),  ('T', "stopped"),  ('I', "idle")] {
-            let line = format!("1 (x) {ch} 0 1 1 0 -1 4194304 \
+        for (ch, _) in [
+            ('R', "running"),
+            ('S', "sleeping"),
+            ('D', "disk-wait"),
+            ('Z', "zombie"),
+            ('T', "stopped"),
+            ('I', "idle"),
+        ] {
+            let line = format!(
+                "1 (x) {ch} 0 1 1 0 -1 4194304 \
                 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 \
                 18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 17 0 0 0 \
-                0 0 0 0 0 0 0 0 0");
+                0 0 0 0 0 0 0 0 0"
+            );
             let s = parse(&line).unwrap();
             assert_eq!(s.state, ch, "state char {ch}");
         }
@@ -190,9 +203,4 @@ mod tests {
         assert!(s.num_threads >= 1);
         assert!(s.start_time > 0);
     }
-}
-pub fn ticks_to_secs(ticks: u64) -> f64 {
-    let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-    let hz = if hz <= 0 { 100 } else { hz as u64 };
-    ticks as f64 / hz as f64
 }

@@ -1,7 +1,10 @@
 //! Thread lifecycle: load eBPF, spawn poller + consumer, run TUI (ARCHITECTURE §3).
 
 use std::{
-    sync::{Arc, Mutex, RwLock, atomic::{AtomicBool, Ordering}},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    },
     time::Duration,
 };
 
@@ -19,11 +22,11 @@ use crate::{
 
 fn mode_name(m: ActiveMode) -> &'static str {
     match m {
-        ActiveMode::Watch  => "watch",
-        ActiveMode::Snap   => "snap",
-        ActiveMode::Lock   => "lock",
-        ActiveMode::Catch  => "catch",
-        ActiveMode::Cold   => "cold",
+        ActiveMode::Watch => "watch",
+        ActiveMode::Snap => "snap",
+        ActiveMode::Lock => "lock",
+        ActiveMode::Catch => "catch",
+        ActiveMode::Cold => "cold",
         ActiveMode::Jitter => "jitter",
     }
 }
@@ -63,11 +66,21 @@ pub fn run_tree(root_pid: u32, record: Option<String>) -> Result<()> {
     use crate::target::tree::TreeTarget;
 
     let tree = TreeTarget::attach(root_pid)?;
-    let extras: Vec<u32> = tree.members.iter().copied().filter(|p| *p != root_pid).collect();
+    let extras: Vec<u32> = tree
+        .members
+        .iter()
+        .copied()
+        .filter(|p| *p != root_pid)
+        .collect();
     let label = format!("tree({})  +{}", root_pid, extras.len());
     run_with_target(
-        root_pid, record, ActiveMode::Watch, 0,
-        extras, Some(label), tree.members.len(),
+        root_pid,
+        record,
+        ActiveMode::Watch,
+        0,
+        extras,
+        Some(label),
+        tree.members.len(),
     )
 }
 
@@ -81,12 +94,22 @@ pub fn run_cgroup(target: String, record: Option<String>) -> Result<()> {
     }
     // Representative pid for /proc poller + identity header.
     let root_pid = cg.members[0];
-    let extras: Vec<u32> = cg.members.iter().copied().filter(|p| *p != root_pid).collect();
+    let extras: Vec<u32> = cg
+        .members
+        .iter()
+        .copied()
+        .filter(|p| *p != root_pid)
+        .collect();
     let total = cg.members.len();
     let label = format!("{}  ({} procs)", cg.label, total);
     run_with_target(
-        root_pid, record, ActiveMode::Watch, 0,
-        extras, Some(label), total,
+        root_pid,
+        record,
+        ActiveMode::Watch,
+        0,
+        extras,
+        Some(label),
+        total,
     )
 }
 
@@ -100,8 +123,7 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
         anyhow::bail!("ghost cold: no command supplied");
     }
 
-    let handle = CmdHandle::spawn_stopped(&cmd)
-        .context("ghost cold: spawning stopped child")?;
+    let handle = CmdHandle::spawn_stopped(&cmd).context("ghost cold: spawning stopped child")?;
     let pid = handle.pid as u32;
     let cmdline = cmd.join(" ");
 
@@ -111,17 +133,21 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
         s.cold.cmdline = cmdline;
         s
     }));
-    let stop  = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
 
     // Open the session sink (if --record was passed).
-    let sink: RecordSink = record.as_deref().and_then(|p| open_sink(p, pid, &cmd[0], ActiveMode::Cold));
+    let sink: RecordSink = record
+        .as_deref()
+        .and_then(|p| open_sink(p, pid, &cmd[0], ActiveMode::Cold));
 
     // Load eBPF, track the stopped child, attach cold probe.
     match load_ebpf(pid, 0) {
         Ok(mut ebpf) => {
             let probe_res = ebpf.attach_cold();
             let track_res = ebpf.attach_track();
-            let errors: Vec<_> = probe_res.errors().into_iter()
+            let errors: Vec<_> = probe_res
+                .errors()
+                .into_iter()
                 .chain(track_res.errors())
                 .map(|s| s.to_string())
                 .collect();
@@ -132,23 +158,27 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
 
             {
                 let mut st = state.write().unwrap();
-                st.ebpf_ok    = errors.is_empty();
-                st.ebpf_error = if errors.is_empty() { None } else { Some(errors.join("; ")) };
+                st.ebpf_ok = errors.is_empty();
+                st.ebpf_error = if errors.is_empty() {
+                    None
+                } else {
+                    Some(errors.join("; "))
+                };
                 st.cold.launch_ts_ns = launch_ns;
             }
 
             // Spawn the consumer BEFORE resuming the child so no event is lost
             // between SIGCONT and the first poll.
             let state_c = Arc::clone(&state);
-            let stop_c  = Arc::clone(&stop);
-            let sink_c  = sink.clone();
+            let stop_c = Arc::clone(&stop);
+            let sink_c = sink.clone();
             std::thread::spawn(move || {
                 crate::ebpf::consumer::run(ebpf, state_c, stop_c, sink_c);
             });
         }
         Err(e) => {
             let mut st = state.write().unwrap();
-            st.ebpf_ok    = false;
+            st.ebpf_ok = false;
             st.ebpf_error = Some(format!("eBPF unavailable: {e}"));
             // No eBPF — still release the child, but the timeline will stay empty.
             st.cold.launch_ts_ns = read_monotonic_ns();
@@ -161,7 +191,7 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
     // /proc poller for identity + RSS.
     {
         let state_p = Arc::clone(&state);
-        let stop_p  = Arc::clone(&stop);
+        let stop_p = Arc::clone(&stop);
         let target_p = PidTarget::attach(pid)?;
         std::thread::spawn(move || proc_poller(target_p, state_p, stop_p));
     }
@@ -173,8 +203,8 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
             let code = handle.wait().ok();
             let mut st = state_r.write().unwrap();
             st.cold.exit_status = code;
-            st.cold.done        = true;
-            st.target_gone      = true;
+            st.cold.done = true;
+            st.target_gone = true;
         });
     }
 
@@ -184,7 +214,9 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
     stop.store(true, Ordering::Relaxed);
     std::thread::sleep(Duration::from_millis(50));
     // Drop the sink; its Drop will not flush, so explicitly flush here.
-    if let Some(w) = &sink { let _ = w.lock().unwrap().flush(); }
+    if let Some(w) = &sink {
+        let _ = w.lock().unwrap().flush();
+    }
     Ok(())
 }
 
@@ -195,17 +227,17 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
 pub fn run_replay(path: String, seek: Option<String>) -> Result<()> {
     use crate::session::reader::SessionReader;
 
-    let mut reader = SessionReader::open(&path)
-        .with_context(|| format!("opening session {path}"))?;
+    let mut reader =
+        SessionReader::open(&path).with_context(|| format!("opening session {path}"))?;
 
     // Decode mode name back to ActiveMode.
     let mode = match reader.meta.mode.as_str() {
-        "lock"   => ActiveMode::Lock,
-        "catch"  => ActiveMode::Catch,
-        "cold"   => ActiveMode::Cold,
+        "lock" => ActiveMode::Lock,
+        "catch" => ActiveMode::Catch,
+        "cold" => ActiveMode::Cold,
         "jitter" => ActiveMode::Jitter,
-        "snap"   => ActiveMode::Snap,
-        _        => ActiveMode::Watch,
+        "snap" => ActiveMode::Snap,
+        _ => ActiveMode::Watch,
     };
     let seek_us = seek.as_deref().map(parse_seek).transpose()?.unwrap_or(0);
 
@@ -217,12 +249,12 @@ pub fn run_replay(path: String, seek: Option<String>) -> Result<()> {
         s.target_label = Some(format!("replay[{}]", reader.meta.mode));
         s
     }));
-    let stop  = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
 
     // Replay thread: iterate frames, respect ts_delta_us (speed = 1x after seek).
     {
         let state_r = Arc::clone(&state);
-        let stop_r  = Arc::clone(&stop);
+        let stop_r = Arc::clone(&stop);
         std::thread::spawn(move || replay_loop(&mut reader, seek_us, state_r, stop_r));
     }
 
@@ -234,16 +266,16 @@ pub fn run_replay(path: String, seek: Option<String>) -> Result<()> {
 }
 
 fn replay_loop(
-    reader:  &mut crate::session::reader::SessionReader,
+    reader: &mut crate::session::reader::SessionReader,
     seek_us: u64,
-    state:   Arc<RwLock<AppState>>,
-    stop:    Arc<AtomicBool>,
+    state: Arc<RwLock<AppState>>,
+    stop: Arc<AtomicBool>,
 ) {
     let mut cumulative_us: u64 = 0;
     while !stop.load(Ordering::Relaxed) {
         let frame = match reader.next_frame() {
-            Ok(Some(f))  => f,
-            Ok(None)     => {
+            Ok(Some(f)) => f,
+            Ok(None) => {
                 state.write().unwrap().target_gone = true;
                 return;
             }
@@ -269,13 +301,20 @@ fn replay_loop(
 fn parse_seek(s: &str) -> Result<u64> {
     // Accept "1s" / "500ms" / "250us" / "750000"
     let s = s.trim();
-    if s.is_empty() { return Ok(0); }
-    let (num, mult): (&str, u64) =
-        if let Some(r) = s.strip_suffix("ms") { (r, 1_000) }
-        else if let Some(r) = s.strip_suffix("us") { (r, 1) }
-        else if let Some(r) = s.strip_suffix('s') { (r, 1_000_000) }
-        else { (s, 1) };
-    num.trim().parse::<u64>()
+    if s.is_empty() {
+        return Ok(0);
+    }
+    let (num, mult): (&str, u64) = if let Some(r) = s.strip_suffix("ms") {
+        (r, 1_000)
+    } else if let Some(r) = s.strip_suffix("us") {
+        (r, 1)
+    } else if let Some(r) = s.strip_suffix('s') {
+        (r, 1_000_000)
+    } else {
+        (s, 1)
+    };
+    num.trim()
+        .parse::<u64>()
         .map(|n| n.saturating_mul(mult))
         .map_err(|_| anyhow::anyhow!("ghost replay: bad --seek value '{s}'"))
 }
@@ -297,7 +336,13 @@ pub fn run_diff(a: String, b: String) -> Result<()> {
             }
         }
         Ok((
-            SessionMeta { pid: meta_pid, comm: meta_comm, mode: meta_mode, start_ns: meta_start, hostname: meta_host },
+            SessionMeta {
+                pid: meta_pid,
+                comm: meta_comm,
+                mode: meta_mode,
+                start_ns: meta_start,
+                hostname: meta_host,
+            },
             counts,
         ))
     };
@@ -305,74 +350,72 @@ pub fn run_diff(a: String, b: String) -> Result<()> {
     let (ma, ca) = fold(&a).with_context(|| format!("reading {a}"))?;
     let (mb, cb) = fold(&b).with_context(|| format!("reading {b}"))?;
 
-    println!("A: {} pid={} mode={} host={}", a, ma.pid, ma.mode, ma.hostname);
-    println!("B: {} pid={} mode={} host={}", b, mb.pid, mb.mode, mb.hostname);
+    println!(
+        "A: {} pid={} mode={} host={}",
+        a, ma.pid, ma.mode, ma.hostname
+    );
+    println!(
+        "B: {} pid={} mode={} host={}",
+        b, mb.pid, mb.mode, mb.hostname
+    );
     println!("{:>14}  {:>10}  {:>10}  {:>10}", "KIND", "A", "B", "Δ(B-A)");
     for (i, name) in EVENT_KIND_NAMES.iter().enumerate() {
-        if ca[i] == 0 && cb[i] == 0 { continue; }
+        if ca[i] == 0 && cb[i] == 0 {
+            continue;
+        }
         let d = cb[i] as i64 - ca[i] as i64;
         println!("{:>14}  {:>10}  {:>10}  {:>+10}", name, ca[i], cb[i], d);
     }
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_seek_bare_us() { assert_eq!(parse_seek("500").unwrap(), 500); }
-    #[test]
-    fn parse_seek_ms()      { assert_eq!(parse_seek("250ms").unwrap(), 250_000); }
-    #[test]
-    fn parse_seek_s()       { assert_eq!(parse_seek("2s").unwrap(), 2_000_000); }
-    #[test]
-    fn parse_seek_us()      { assert_eq!(parse_seek("750us").unwrap(), 750); }
-    #[test]
-    fn parse_seek_empty_zero() { assert_eq!(parse_seek("").unwrap(), 0); }
-    #[test]
-    fn parse_seek_bad()        { assert!(parse_seek("nope").is_err()); }
-
-    #[test]
-    fn mode_name_covers_all_variants() {
-        assert_eq!(mode_name(ActiveMode::Watch),  "watch");
-        assert_eq!(mode_name(ActiveMode::Lock),   "lock");
-        assert_eq!(mode_name(ActiveMode::Catch),  "catch");
-        assert_eq!(mode_name(ActiveMode::Cold),   "cold");
-        assert_eq!(mode_name(ActiveMode::Jitter), "jitter");
-        assert_eq!(mode_name(ActiveMode::Snap),   "snap");
-    }
-}
-
 const EVENT_KIND_NAMES: [&str; 11] = [
-    "unknown",   "SyscallExit", "SchedSwitch", "SchedWakeup",
-    "FutexWait", "FutexWake",   "IrqSpan",     "Fork",
-    "Exit",      "ExecPhase",   "CatchHit",
+    "unknown",
+    "SyscallExit",
+    "SchedSwitch",
+    "SchedWakeup",
+    "FutexWait",
+    "FutexWake",
+    "IrqSpan",
+    "Fork",
+    "Exit",
+    "ExecPhase",
+    "CatchHit",
 ];
 
 /// CLOCK_MONOTONIC nanoseconds — same clock as bpf_ktime_get_ns.
 fn read_monotonic_ns() -> u64 {
-    let mut ts: libc::timespec = libc::timespec { tv_sec: 0, tv_nsec: 0 };
-    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts); }
+    let mut ts: libc::timespec = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe {
+        libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts);
+    }
     (ts.tv_sec as u64) * 1_000_000_000 + (ts.tv_nsec as u64)
 }
 
-fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_threshold_ns: u64) -> Result<()> {
+fn run_with_mode(
+    pid: u32,
+    record: Option<String>,
+    mode: ActiveMode,
+    catch_threshold_ns: u64,
+) -> Result<()> {
     run_with_target(pid, record, mode, catch_threshold_ns, vec![], None, 1)
 }
 
 fn run_with_target(
-    pid:                u32,
-    record:             Option<String>,
-    mode:               ActiveMode,
+    pid: u32,
+    record: Option<String>,
+    mode: ActiveMode,
     catch_threshold_ns: u64,
-    extra_pids:         Vec<u32>,
-    target_label:       Option<String>,
-    tracked_count:      usize,
+    extra_pids: Vec<u32>,
+    target_label: Option<String>,
+    tracked_count: usize,
 ) -> Result<()> {
     // ── resolve target ────────────────────────────────────────────────────────
     let target = PidTarget::attach(pid)?;
-    let comm   = crate::proc::stat::Stat::read(pid)
+    let comm = crate::proc::stat::Stat::read(pid)
         .map(|s| s.comm.clone())
         .unwrap_or_else(|_| "?".into());
 
@@ -380,18 +423,20 @@ fn run_with_target(
         let mut s = AppState::new(pid, comm.clone());
         s.mode = mode;
         s.catch.threshold_ns = catch_threshold_ns;
-        s.target_label  = target_label;
+        s.target_label = target_label;
         s.tracked_count = tracked_count.max(1);
         s
     }));
-    let stop  = Arc::new(AtomicBool::new(false));
+    let stop = Arc::new(AtomicBool::new(false));
 
     // ── try to load eBPF ──────────────────────────────────────────────────────
     let ebpf_result = load_ebpf(pid, catch_threshold_ns);
 
     // Open the session sink (if --record was passed) up front; the consumer
     // thread holds a clone and tees frames into it.
-    let sink: RecordSink = record.as_deref().and_then(|p| open_sink(p, pid, &comm, mode));
+    let sink: RecordSink = record
+        .as_deref()
+        .and_then(|p| open_sink(p, pid, &comm, mode));
 
     match ebpf_result {
         Ok(mut ebpf) => {
@@ -405,46 +450,53 @@ fn run_with_target(
             // tracepoints; watch mode needs the sys_enter/exit + sched_switch
             // set. Track probes (fork/exit) are always useful.
             let probe_res = match mode {
-                ActiveMode::Lock   => ebpf.attach_lock(),
-                ActiveMode::Catch  => ebpf.attach_catch(),
+                ActiveMode::Lock => ebpf.attach_lock(),
+                ActiveMode::Catch => ebpf.attach_catch(),
                 ActiveMode::Jitter => ebpf.attach_jitter(),
-                _                  => ebpf.attach_watch(),
+                _ => ebpf.attach_watch(),
             };
             let track_res = ebpf.attach_track();
 
-            let errors: Vec<_> = probe_res.errors().into_iter()
+            let errors: Vec<_> = probe_res
+                .errors()
+                .into_iter()
                 .chain(track_res.errors())
                 .map(|s| s.to_string())
                 .collect();
 
             {
                 let mut st = state.write().unwrap();
-                st.ebpf_ok    = errors.is_empty();
-                st.ebpf_error = if errors.is_empty() { None } else {
+                st.ebpf_ok = errors.is_empty();
+                st.ebpf_error = if errors.is_empty() {
+                    None
+                } else {
                     Some(errors.join("; "))
                 };
             }
 
             // Spawn eBPF consumer thread.
-            let state_c  = Arc::clone(&state);
-            let stop_c   = Arc::clone(&stop);
-            let sink_c   = sink.clone();
+            let state_c = Arc::clone(&state);
+            let stop_c = Arc::clone(&stop);
+            let sink_c = sink.clone();
             std::thread::spawn(move || {
                 crate::ebpf::consumer::run(ebpf, state_c, stop_c, sink_c);
             });
         }
         Err(e) => {
             let mut st = state.write().unwrap();
-            st.ebpf_ok    = false;
+            st.ebpf_ok = false;
             st.ebpf_error = Some(format!("eBPF unavailable: {e}"));
         }
     }
 
     // ── spawn /proc poller ────────────────────────────────────────────────────
     {
-        let state_p  = Arc::clone(&state);
-        let stop_p   = Arc::clone(&stop);
-        let target_p = PidTarget { pid: target.pid, start_time: target.start_time };
+        let state_p = Arc::clone(&state);
+        let stop_p = Arc::clone(&stop);
+        let target_p = PidTarget {
+            pid: target.pid,
+            start_time: target.start_time,
+        };
         std::thread::spawn(move || proc_poller(target_p, state_p, stop_p));
     }
 
@@ -468,11 +520,7 @@ fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
     Ok(ebpf)
 }
 
-fn proc_poller(
-    target: PidTarget,
-    state:  Arc<RwLock<AppState>>,
-    stop:   Arc<AtomicBool>,
-) {
+fn proc_poller(target: PidTarget, state: Arc<RwLock<AppState>>, stop: Arc<AtomicBool>) {
     while !stop.load(Ordering::Relaxed) {
         if !target.is_alive() {
             state.write().unwrap().target_gone = true;
@@ -493,7 +541,7 @@ fn proc_poller(
                     }
                 }
                 st.watch.prev_cpu_ticks = Some(curr_ticks);
-                st.watch.voluntary_ctx   = snap.status.voluntary_ctxt_switches;
+                st.watch.voluntary_ctx = snap.status.voluntary_ctxt_switches;
                 st.watch.involuntary_ctx = snap.status.nonvoluntary_ctxt_switches;
                 st.snap = Some(snap);
             }
@@ -503,5 +551,45 @@ fn proc_poller(
             }
         }
         std::thread::sleep(Duration::from_millis(1000));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_seek_bare_us() {
+        assert_eq!(parse_seek("500").unwrap(), 500);
+    }
+    #[test]
+    fn parse_seek_ms() {
+        assert_eq!(parse_seek("250ms").unwrap(), 250_000);
+    }
+    #[test]
+    fn parse_seek_s() {
+        assert_eq!(parse_seek("2s").unwrap(), 2_000_000);
+    }
+    #[test]
+    fn parse_seek_us() {
+        assert_eq!(parse_seek("750us").unwrap(), 750);
+    }
+    #[test]
+    fn parse_seek_empty_zero() {
+        assert_eq!(parse_seek("").unwrap(), 0);
+    }
+    #[test]
+    fn parse_seek_bad() {
+        assert!(parse_seek("nope").is_err());
+    }
+
+    #[test]
+    fn mode_name_covers_all_variants() {
+        assert_eq!(mode_name(ActiveMode::Watch), "watch");
+        assert_eq!(mode_name(ActiveMode::Lock), "lock");
+        assert_eq!(mode_name(ActiveMode::Catch), "catch");
+        assert_eq!(mode_name(ActiveMode::Cold), "cold");
+        assert_eq!(mode_name(ActiveMode::Jitter), "jitter");
+        assert_eq!(mode_name(ActiveMode::Snap), "snap");
     }
 }

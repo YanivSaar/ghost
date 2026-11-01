@@ -12,7 +12,9 @@ use std::{
 
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{
+        self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyModifiers,
+    },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -24,9 +26,9 @@ use crate::{
 };
 
 pub struct Tui {
-    terminal:    Terminal<CrosstermBackend<Stdout>>,
-    mouse:       bool,
-    dense:       bool,
+    terminal: Terminal<CrosstermBackend<Stdout>>,
+    mouse: bool,
+    dense: bool,
     table_state: TableState,
 }
 
@@ -38,19 +40,26 @@ impl Tui {
         let mouse = probe_mouse(&mut stdout);
 
         execute!(stdout, EnterAlternateScreen)?;
-        if mouse { execute!(stdout, EnableMouseCapture)?; }
+        if mouse {
+            execute!(stdout, EnableMouseCapture)?;
+        }
 
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
-        Ok(Self { terminal, mouse, dense: true, table_state: TableState::default() })
+        Ok(Self {
+            terminal,
+            mouse,
+            dense: true,
+            table_state: TableState::default(),
+        })
     }
 
     /// Drive the render + input loop until exit is requested or `stop` is set.
     pub fn run(
         &mut self,
         state: Arc<RwLock<AppState>>,
-        stop:  Arc<std::sync::atomic::AtomicBool>,
+        stop: Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<()> {
         loop {
             // Render frame.
@@ -58,19 +67,17 @@ impl Tui {
                 let st = state.read().unwrap();
                 let dense = self.dense;
                 let ts = &mut self.table_state;
-                self.terminal.draw(|f| {
-                    match (st.mode, dense) {
-                        (ActiveMode::Lock,  true)  => lock::render_dense(f, &st, ts),
-                        (ActiveMode::Lock,  false) => lock::render_minimal(f, &st, ts),
-                        (ActiveMode::Catch, true)  => catch::render_dense(f, &st, ts),
-                        (ActiveMode::Catch, false) => catch::render_minimal(f, &st, ts),
-                        (ActiveMode::Cold,   true)  => cold::render_dense(f, &st, ts),
-                        (ActiveMode::Cold,   false) => cold::render_minimal(f, &st, ts),
-                        (ActiveMode::Jitter, true)  => jitter::render_dense(f, &st, ts),
-                        (ActiveMode::Jitter, false) => jitter::render_minimal(f, &st, ts),
-                        (_,                  true)  => overview::render_dense(f, &st, ts),
-                        (_,                  false) => overview::render_minimal(f, &st, ts),
-                    }
+                self.terminal.draw(|f| match (st.mode, dense) {
+                    (ActiveMode::Lock, true) => lock::render_dense(f, &st, ts),
+                    (ActiveMode::Lock, false) => lock::render_minimal(f, &st, ts),
+                    (ActiveMode::Catch, true) => catch::render_dense(f, &st, ts),
+                    (ActiveMode::Catch, false) => catch::render_minimal(f, &st, ts),
+                    (ActiveMode::Cold, true) => cold::render_dense(f, &st, ts),
+                    (ActiveMode::Cold, false) => cold::render_minimal(f, &st, ts),
+                    (ActiveMode::Jitter, true) => jitter::render_dense(f, &st, ts),
+                    (ActiveMode::Jitter, false) => jitter::render_minimal(f, &st, ts),
+                    (_, true) => overview::render_dense(f, &st, ts),
+                    (_, false) => overview::render_minimal(f, &st, ts),
                 })?;
             }
 
@@ -87,7 +94,9 @@ impl Tui {
                             break;
                         }
                     }
-                    Event::Resize(_, _) => { self.terminal.autoresize()?; }
+                    Event::Resize(_, _) => {
+                        self.terminal.autoresize()?;
+                    }
                     _ => {}
                 }
             }
@@ -98,8 +107,7 @@ impl Tui {
     /// Returns true if the user requested quit.
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         match (key.code, key.modifiers) {
-            (KeyCode::Char('q'), _)
-            | (KeyCode::Char('c'), KeyModifiers::CONTROL) => true,
+            (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => true,
 
             (KeyCode::Char('v'), _) => {
                 self.dense = !self.dense;
@@ -111,7 +119,9 @@ impl Tui {
                 false
             }
             (KeyCode::Up, _) => {
-                let i = self.table_state.selected()
+                let i = self
+                    .table_state
+                    .selected()
                     .map(|i| i.saturating_sub(1))
                     .unwrap_or(0);
                 self.table_state.select(Some(i));
@@ -125,10 +135,7 @@ impl Tui {
 impl Drop for Tui {
     fn drop(&mut self) {
         let _ = disable_raw_mode();
-        let _ = execute!(
-            self.terminal.backend_mut(),
-            LeaveAlternateScreen
-        );
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         if self.mouse {
             let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
         }

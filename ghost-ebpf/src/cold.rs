@@ -18,7 +18,7 @@ use crate::{COLD_STAT, PID_SET};
 
 #[tracepoint]
 pub fn sys_enter_cold(ctx: TracePointContext) -> u32 {
-    unsafe { try_enter(ctx) }.unwrap_or(0) as u32
+    unsafe { try_enter(ctx) }.unwrap_or(0)
 }
 
 unsafe fn try_enter(ctx: TracePointContext) -> Result<u32, i64> {
@@ -35,7 +35,10 @@ unsafe fn try_enter(ctx: TracePointContext) -> Result<u32, i64> {
         (*stat).count += 1;
     } else {
         let now = bpf_ktime_get_ns();
-        let stat = ColdStat { first_ts_ns: now, count: 1 };
+        let stat = ColdStat {
+            first_ts_ns: now,
+            count: 1,
+        };
         COLD_STAT.insert(&key, &stat, 0).ok();
     }
     Ok(0)

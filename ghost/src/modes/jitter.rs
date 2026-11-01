@@ -11,10 +11,10 @@ use super::mode::{Mode, ModeId, ModeView, Probe};
 
 static JITTER_PROBES: &[Probe] = &[
     Probe::Tracepoint("sched", "sched_switch"),
-    Probe::Tracepoint("irq",   "irq_handler_entry"),
-    Probe::Tracepoint("irq",   "irq_handler_exit"),
-    Probe::Tracepoint("irq",   "softirq_entry"),
-    Probe::Tracepoint("irq",   "softirq_exit"),
+    Probe::Tracepoint("irq", "irq_handler_entry"),
+    Probe::Tracepoint("irq", "irq_handler_exit"),
+    Probe::Tracepoint("irq", "softirq_entry"),
+    Probe::Tracepoint("irq", "softirq_exit"),
 ];
 
 #[derive(Debug, Default)]
@@ -23,13 +23,19 @@ pub struct JitterMode {
 }
 
 impl JitterMode {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Mode for JitterMode {
-    fn id(&self) -> ModeId { ModeId::Jitter }
+    fn id(&self) -> ModeId {
+        ModeId::Jitter
+    }
 
-    fn probes(&self) -> &'static [Probe] { JITTER_PROBES }
+    fn probes(&self) -> &'static [Probe] {
+        JITTER_PROBES
+    }
 
     fn on_event(&mut self, _kind: EventKind, _bytes: &[u8], _now: u64) {
         self.events_seen += 1;
@@ -55,11 +61,26 @@ mod tests {
         let m = JitterMode::new();
         let probes = m.probes();
         assert_eq!(probes.len(), 5);
-        assert!(matches!(probes[0], Probe::Tracepoint("sched", "sched_switch")));
-        assert!(matches!(probes[1], Probe::Tracepoint("irq", "irq_handler_entry")));
-        assert!(matches!(probes[2], Probe::Tracepoint("irq", "irq_handler_exit")));
-        assert!(matches!(probes[3], Probe::Tracepoint("irq", "softirq_entry")));
-        assert!(matches!(probes[4], Probe::Tracepoint("irq", "softirq_exit")));
+        assert!(matches!(
+            probes[0],
+            Probe::Tracepoint("sched", "sched_switch")
+        ));
+        assert!(matches!(
+            probes[1],
+            Probe::Tracepoint("irq", "irq_handler_entry")
+        ));
+        assert!(matches!(
+            probes[2],
+            Probe::Tracepoint("irq", "irq_handler_exit")
+        ));
+        assert!(matches!(
+            probes[3],
+            Probe::Tracepoint("irq", "softirq_entry")
+        ));
+        assert!(matches!(
+            probes[4],
+            Probe::Tracepoint("irq", "softirq_exit")
+        ));
     }
 
     #[test]

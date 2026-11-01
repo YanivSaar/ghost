@@ -21,13 +21,19 @@ pub struct CatchMode {
 }
 
 impl CatchMode {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 impl Mode for CatchMode {
-    fn id(&self) -> ModeId { ModeId::Catch }
+    fn id(&self) -> ModeId {
+        ModeId::Catch
+    }
 
-    fn probes(&self) -> &'static [Probe] { CATCH_PROBES }
+    fn probes(&self) -> &'static [Probe] {
+        CATCH_PROBES
+    }
 
     fn on_event(&mut self, kind: EventKind, _bytes: &[u8], _now: u64) {
         if kind == EventKind::CatchHit {
@@ -55,8 +61,14 @@ mod tests {
         let m = CatchMode::new();
         let probes = m.probes();
         assert_eq!(probes.len(), 2);
-        assert!(matches!(probes[0], Probe::Tracepoint("raw_syscalls", "sys_enter")));
-        assert!(matches!(probes[1], Probe::Tracepoint("raw_syscalls", "sys_exit")));
+        assert!(matches!(
+            probes[0],
+            Probe::Tracepoint("raw_syscalls", "sys_enter")
+        ));
+        assert!(matches!(
+            probes[1],
+            Probe::Tracepoint("raw_syscalls", "sys_exit")
+        ));
     }
 
     #[test]

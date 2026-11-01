@@ -23,9 +23,9 @@ pub fn read(pid: u32) -> Result<Vec<SocketEntry>> {
 
     let mut entries = Vec::new();
     for (path, proto, is_v6) in [
-        (format!("/proc/{pid}/net/tcp"),  "tcp",  false),
+        (format!("/proc/{pid}/net/tcp"), "tcp", false),
         (format!("/proc/{pid}/net/tcp6"), "tcp6", true),
-        (format!("/proc/{pid}/net/udp"),  "udp",  false),
+        (format!("/proc/{pid}/net/udp"), "udp", false),
         (format!("/proc/{pid}/net/udp6"), "udp6", true),
     ] {
         if let Ok(raw) = fs::read_to_string(&path) {
@@ -46,7 +46,8 @@ fn socket_inodes(pid: u32) -> HashSet<u64> {
         for e in entries.flatten() {
             if let Ok(target) = fs::read_link(e.path()) {
                 let s = target.to_string_lossy();
-                if let Some(inode_s) = s.strip_prefix("socket:[").and_then(|s| s.strip_suffix(']')) {
+                if let Some(inode_s) = s.strip_prefix("socket:[").and_then(|s| s.strip_suffix(']'))
+                {
                     if let Ok(inode) = inode_s.parse::<u64>() {
                         set.insert(inode);
                     }
@@ -58,20 +59,31 @@ fn socket_inodes(pid: u32) -> HashSet<u64> {
 }
 
 fn parse_net_file(raw: &str, proto: &'static str, is_v6: bool) -> Vec<SocketEntry> {
-    raw.lines().skip(1).filter_map(|line| parse_net_line(line, proto, is_v6)).collect()
+    raw.lines()
+        .skip(1)
+        .filter_map(|line| parse_net_line(line, proto, is_v6))
+        .collect()
 }
 
 fn parse_net_line(line: &str, proto: &'static str, is_v6: bool) -> Option<SocketEntry> {
     let fields: Vec<&str> = line.split_whitespace().collect();
-    if fields.len() < 10 { return None; }
+    if fields.len() < 10 {
+        return None;
+    }
 
-    let local_addr  = decode_addr(fields[1], is_v6)?;
+    let local_addr = decode_addr(fields[1], is_v6)?;
     let remote_addr = decode_addr(fields[2], is_v6)?;
     let state_hex: u8 = u8::from_str_radix(fields[3], 16).ok()?;
     let state = tcp_state(state_hex);
     let inode: u64 = fields[9].parse().ok()?;
 
-    Some(SocketEntry { local_addr, remote_addr, state: state.to_string(), proto, inode })
+    Some(SocketEntry {
+        local_addr,
+        remote_addr,
+        state: state.to_string(),
+        proto,
+        inode,
+    })
 }
 
 fn decode_addr(hex: &str, is_v6: bool) -> Option<String> {
@@ -80,15 +92,21 @@ fn decode_addr(hex: &str, is_v6: bool) -> Option<String> {
 
     let addr = if is_v6 {
         // 32 hex chars, little-endian 32-bit words
-        if addr_hex.len() != 32 { return None; }
+        if addr_hex.len() != 32 {
+            return None;
+        }
         let mut words = [0u32; 4];
         for (i, w) in words.iter_mut().enumerate() {
-            *w = u32::from_str_radix(&addr_hex[i * 8..(i + 1) * 8], 16).ok()?.swap_bytes();
+            *w = u32::from_str_radix(&addr_hex[i * 8..(i + 1) * 8], 16)
+                .ok()?
+                .swap_bytes();
         }
         let bytes: [u8; 16] = unsafe { std::mem::transmute(words) };
         Ipv6Addr::from(bytes).to_string()
     } else {
-        if addr_hex.len() != 8 { return None; }
+        if addr_hex.len() != 8 {
+            return None;
+        }
         let raw = u32::from_str_radix(addr_hex, 16).ok()?.swap_bytes();
         Ipv4Addr::from(raw).to_string()
     };
@@ -98,10 +116,18 @@ fn decode_addr(hex: &str, is_v6: bool) -> Option<String> {
 
 fn tcp_state(n: u8) -> &'static str {
     match n {
-        1 => "ESTABLISHED", 2 => "SYN_SENT",   3 => "SYN_RECV",
-        4 => "FIN_WAIT1",   5 => "FIN_WAIT2",  6 => "TIME_WAIT",
-        7 => "CLOSE",       8 => "CLOSE_WAIT", 9 => "LAST_ACK",
-        10 => "LISTEN",     11 => "CLOSING",   12 => "NEW_SYN_RECV",
+        1 => "ESTABLISHED",
+        2 => "SYN_SENT",
+        3 => "SYN_RECV",
+        4 => "FIN_WAIT1",
+        5 => "FIN_WAIT2",
+        6 => "TIME_WAIT",
+        7 => "CLOSE",
+        8 => "CLOSE_WAIT",
+        9 => "LAST_ACK",
+        10 => "LISTEN",
+        11 => "CLOSING",
+        12 => "NEW_SYN_RECV",
         _ => "UNKNOWN",
     }
 }
@@ -145,10 +171,10 @@ mod tests {
 
     #[test]
     fn tcp_state_known_values() {
-        assert_eq!(tcp_state(1),  "ESTABLISHED");
+        assert_eq!(tcp_state(1), "ESTABLISHED");
         assert_eq!(tcp_state(10), "LISTEN");
-        assert_eq!(tcp_state(6),  "TIME_WAIT");
-        assert_eq!(tcp_state(0),  "UNKNOWN");
+        assert_eq!(tcp_state(6), "TIME_WAIT");
+        assert_eq!(tcp_state(0), "UNKNOWN");
         assert_eq!(tcp_state(99), "UNKNOWN");
     }
 
@@ -162,11 +188,11 @@ mod tests {
                     00000000:00000000 00:00000000 00000000   1000        0 99999 \
                     1 0000000000000000 100 0 0 10 0";
         let e = net_line(line, "tcp", false).unwrap();
-        assert_eq!(e.local_addr,  "127.0.0.1:8000");
+        assert_eq!(e.local_addr, "127.0.0.1:8000");
         assert_eq!(e.remote_addr, "0.0.0.0:0");
-        assert_eq!(e.state,       "LISTEN");
-        assert_eq!(e.proto,       "tcp");
-        assert_eq!(e.inode,       99999);
+        assert_eq!(e.state, "LISTEN");
+        assert_eq!(e.proto, "tcp");
+        assert_eq!(e.inode, 99999);
     }
 
     #[test]

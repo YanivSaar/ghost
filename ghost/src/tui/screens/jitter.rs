@@ -9,18 +9,18 @@ use ratatui::{
     Frame,
 };
 
-use crate::state::AppState;
 use super::super::widgets;
+use crate::state::AppState;
 
 pub fn render_dense(f: &mut Frame, state: &AppState, table_state: &mut TableState) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // header
-            Constraint::Length(3),  // totals bar
-            Constraint::Min(6),     // tables (split 50/50 horizontally)
-            Constraint::Length(1),  // keybind bar
+            Constraint::Length(3), // header
+            Constraint::Length(3), // totals bar
+            Constraint::Min(6),    // tables (split 50/50 horizontally)
+            Constraint::Length(1), // keybind bar
         ])
         .split(area);
 
@@ -57,19 +57,37 @@ fn render_header(f: &mut Frame, area: Rect, state: &AppState) {
     let ebpf_badge = if state.ebpf_ok {
         Span::styled(" eBPF ", Style::default().fg(Color::Black).bg(Color::Green))
     } else {
-        Span::styled(" proc ", Style::default().fg(Color::Black).bg(Color::Yellow))
+        Span::styled(
+            " proc ",
+            Style::default().fg(Color::Black).bg(Color::Yellow),
+        )
     };
     let gone_badge = if state.target_gone {
-        Span::styled(" GONE ", Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD))
+        Span::styled(
+            " GONE ",
+            Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        )
     } else {
         Span::styled("", Style::default())
     };
 
     let line = Line::from(vec![
-        Span::styled(format!(" {} ", state.comm),
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", state.comm),
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw(format!("pid:{}  ", state.pid)),
-        Span::styled("[ jitter ]", Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[ jitter ]",
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
         ebpf_badge,
         Span::raw(" "),
@@ -80,13 +98,11 @@ fn render_header(f: &mut Frame, area: Rect, state: &AppState) {
 }
 
 fn render_totals(f: &mut Frame, area: Rect, state: &AppState) {
-    let hard_us = state.jitter.total_irq_ns     / 1_000;
+    let hard_us = state.jitter.total_irq_ns / 1_000;
     let soft_us = state.jitter.total_softirq_ns / 1_000;
-    let invol   = state.jitter.involuntary_ctx;
+    let invol = state.jitter.involuntary_ctx;
 
-    let text = format!(
-        " hardirq:{hard_us}µs  softirq:{soft_us}µs  preempt-ctx:{invol}"
-    );
+    let text = format!(" hardirq:{hard_us}µs  softirq:{soft_us}µs  preempt-ctx:{invol}");
     let para = Paragraph::new(text)
         .block(Block::default().borders(Borders::TOP))
         .style(Style::default().fg(Color::DarkGray));
@@ -95,29 +111,59 @@ fn render_totals(f: &mut Frame, area: Rect, state: &AppState) {
 
 fn render_hard_table(f: &mut Frame, area: Rect, state: &AppState, ts: &mut TableState) {
     let header = Row::new(vec![
-        Cell::from("IRQ").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("HITS").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("TOTAL µs").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("MAX µs").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-    ]).height(1);
-
-    let rows: Vec<Row> = state.jitter.hard_irqs.iter().take(20).map(|(irq, s)| {
-        Row::new(vec![
-            Cell::from(irq.to_string()),
-            Cell::from(s.count.to_string()),
-            Cell::from((s.total_ns / 1_000).to_string()),
-            Cell::from((s.max_ns   / 1_000).to_string()),
-        ])
-    }).collect();
-
-    let table = Table::new(rows, [
-        Constraint::Length(8),
-        Constraint::Length(8),
-        Constraint::Length(10),
-        Constraint::Length(10),
+        Cell::from("IRQ").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("HITS").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("TOTAL µs").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("MAX µs").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
+    .height(1);
+
+    let rows: Vec<Row> = state
+        .jitter
+        .hard_irqs
+        .iter()
+        .take(20)
+        .map(|(irq, s)| {
+            Row::new(vec![
+                Cell::from(irq.to_string()),
+                Cell::from(s.count.to_string()),
+                Cell::from((s.total_ns / 1_000).to_string()),
+                Cell::from((s.max_ns / 1_000).to_string()),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(8),
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Length(10),
+        ],
+    )
     .header(header)
-    .block(Block::default().title("Hardirqs on target CPU").borders(Borders::ALL))
+    .block(
+        Block::default()
+            .title("Hardirqs on target CPU")
+            .borders(Borders::ALL),
+    )
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     f.render_stateful_widget(table, area, ts);
@@ -125,29 +171,59 @@ fn render_hard_table(f: &mut Frame, area: Rect, state: &AppState, ts: &mut Table
 
 fn render_soft_table(f: &mut Frame, area: Rect, state: &AppState) {
     let header = Row::new(vec![
-        Cell::from("SOFTIRQ").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("HITS").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("TOTAL µs").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        Cell::from("MAX µs").style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-    ]).height(1);
-
-    let rows: Vec<Row> = state.jitter.soft_irqs.iter().take(10).map(|(vec_nr, s)| {
-        Row::new(vec![
-            Cell::from(softirq_name(*vec_nr)),
-            Cell::from(s.count.to_string()),
-            Cell::from((s.total_ns / 1_000).to_string()),
-            Cell::from((s.max_ns   / 1_000).to_string()),
-        ])
-    }).collect();
-
-    let table = Table::new(rows, [
-        Constraint::Length(10),
-        Constraint::Length(8),
-        Constraint::Length(10),
-        Constraint::Length(10),
+        Cell::from("SOFTIRQ").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("HITS").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("TOTAL µs").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Cell::from("MAX µs").style(
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
     ])
+    .height(1);
+
+    let rows: Vec<Row> = state
+        .jitter
+        .soft_irqs
+        .iter()
+        .take(10)
+        .map(|(vec_nr, s)| {
+            Row::new(vec![
+                Cell::from(softirq_name(*vec_nr)),
+                Cell::from(s.count.to_string()),
+                Cell::from((s.total_ns / 1_000).to_string()),
+                Cell::from((s.max_ns / 1_000).to_string()),
+            ])
+        })
+        .collect();
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(10),
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Length(10),
+        ],
+    )
     .header(header)
-    .block(Block::default().title("Softirqs on target CPU").borders(Borders::ALL));
+    .block(
+        Block::default()
+            .title("Softirqs on target CPU")
+            .borders(Borders::ALL),
+    );
 
     f.render_widget(table, area);
 }
@@ -159,18 +235,25 @@ fn render_keybind_bar(f: &mut Frame, area: Rect, state: &AppState) {
     } else {
         Span::raw("")
     };
-    widgets::status_bar(f, area, vec![
-        Span::raw("  q:quit  v:toggle-view  ↑↓:scroll"),
-        err_span,
-    ]);
+    widgets::status_bar(
+        f,
+        area,
+        vec![Span::raw("  q:quit  v:toggle-view  ↑↓:scroll"), err_span],
+    );
 }
 
 /// Softirq vec_nr names (kernel include/trace/events/irq.h).
 fn softirq_name(vec_nr: u32) -> &'static str {
     match vec_nr {
-        0 => "HI",       1 => "TIMER",   2 => "NET_TX",
-        3 => "NET_RX",   4 => "BLOCK",   5 => "IRQ_POLL",
-        6 => "TASKLET",  7 => "SCHED",   8 => "HRTIMER",
+        0 => "HI",
+        1 => "TIMER",
+        2 => "NET_TX",
+        3 => "NET_RX",
+        4 => "BLOCK",
+        5 => "IRQ_POLL",
+        6 => "TASKLET",
+        7 => "SCHED",
+        8 => "HRTIMER",
         9 => "RCU",
         _ => "?",
     }

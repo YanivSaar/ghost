@@ -3,15 +3,15 @@
 //! time we also walk /proc once so that any *existing* descendants of the
 //! root are tracked from the first event.
 
-use std::fs;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs;
 
 use anyhow::{Context, Result};
 
 use crate::proc::stat::Stat;
 
 pub struct TreeTarget {
-    pub root:    u32,
+    pub root: u32,
     pub members: Vec<u32>,
 }
 
@@ -33,19 +33,26 @@ impl TreeTarget {
         }
 
         let mut seen: HashSet<u32> = HashSet::new();
-        let mut order: Vec<u32>    = Vec::new();
-        let mut q: VecDeque<u32>   = VecDeque::new();
+        let mut order: Vec<u32> = Vec::new();
+        let mut q: VecDeque<u32> = VecDeque::new();
         q.push_back(root);
 
         while let Some(pid) = q.pop_front() {
-            if !seen.insert(pid) { continue; }
+            if !seen.insert(pid) {
+                continue;
+            }
             order.push(pid);
             if let Some(kids) = children.get(&pid) {
-                for &k in kids { q.push_back(k); }
+                for &k in kids {
+                    q.push_back(k);
+                }
             }
         }
 
-        Ok(Self { root, members: order })
+        Ok(Self {
+            root,
+            members: order,
+        })
     }
 }
 
@@ -54,12 +61,16 @@ impl TreeTarget {
 /// tracepoint fires on tgid granularity.
 fn scan_proc() -> Result<(HashMap<u32, u32>, HashMap<u32, String>)> {
     let mut parent_of: HashMap<u32, u32> = HashMap::new();
-    let mut comm_of:   HashMap<u32, String> = HashMap::new();
+    let mut comm_of: HashMap<u32, String> = HashMap::new();
     for entry in fs::read_dir("/proc")? {
         let Ok(entry) = entry else { continue };
-        let Ok(name)  = entry.file_name().into_string() else { continue };
-        let Ok(pid)   = name.parse::<u32>() else { continue };
-        let Ok(stat)  = Stat::read(pid) else { continue };
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        let Ok(pid) = name.parse::<u32>() else {
+            continue;
+        };
+        let Ok(stat) = Stat::read(pid) else { continue };
         parent_of.insert(pid, stat.ppid);
         comm_of.insert(pid, stat.comm);
     }
