@@ -5,7 +5,7 @@
 //! hold the write lock only long enough to update aggregates.
 
 use std::collections::VecDeque;
-use ghost_common::{ColdStat, LockStat, SyscallKey, SyscallStat};
+use ghost_common::{ColdStat, IrqStat, LockStat, SyscallKey, SyscallStat};
 use crate::proc::ProcSnapshot;
 
 /// Max hits retained in CatchLensState.recent_hits (newest first).
@@ -26,6 +26,7 @@ pub struct AppState {
     pub lock:       LockLensState,
     pub catch:      CatchLensState,
     pub cold:       ColdLensState,
+    pub jitter:     JitterLensState,
     pub snap:       Option<ProcSnapshot>,
 
     /// Set to true when the target process exits.
@@ -39,6 +40,19 @@ pub enum ActiveMode {
     Lock,
     Catch,
     Cold,
+    Jitter,
+}
+
+/// Live state for the `jitter` lens. Both tables are sorted by total_ns
+/// descending so the TUI can show "the IRQ eating the most CPU away from
+/// the target first".
+#[derive(Debug, Default)]
+pub struct JitterLensState {
+    pub hard_irqs:        Vec<(u32, IrqStat)>,
+    pub soft_irqs:        Vec<(u32, IrqStat)>,
+    pub total_irq_ns:     u64,
+    pub total_softirq_ns: u64,
+    pub involuntary_ctx:  u64,
 }
 
 /// Live state for the `cold` lens. `launch_ts_ns` is captured in the same
@@ -128,6 +142,7 @@ impl AppState {
             lock:  LockLensState::default(),
             catch: CatchLensState::default(),
             cold:  ColdLensState::default(),
+            jitter: JitterLensState::default(),
             snap: None,
             target_gone: false,
         }
@@ -194,6 +209,16 @@ mod tests {
         // newest first
         assert_eq!(c.recent_hits.front().unwrap().ts_ns, (CATCH_RING_CAP + 49) as u64);
         assert_eq!(c.max_delta_ns, (CATCH_RING_CAP + 49) as u64);
+    }
+
+    #[test]
+    fn jitter_lens_state_defaults() {
+        let j = JitterLensState::default();
+        assert_eq!(j.total_irq_ns, 0);
+        assert_eq!(j.total_softirq_ns, 0);
+        assert_eq!(j.involuntary_ctx, 0);
+        assert!(j.hard_irqs.is_empty());
+        assert!(j.soft_irqs.is_empty());
     }
 
     #[test]

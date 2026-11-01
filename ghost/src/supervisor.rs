@@ -28,6 +28,10 @@ pub fn run_catch(pid: u32, record: Option<String>, threshold_ns: u64) -> Result<
     run_with_mode(pid, record, ActiveMode::Catch, threshold_ns)
 }
 
+pub fn run_jitter(pid: u32, record: Option<String>) -> Result<()> {
+    run_with_mode(pid, record, ActiveMode::Jitter, 0)
+}
+
 /// Launch `cmd` under cold-mode instrumentation: fork the target with
 /// SIGSTOP, wire it into PID_SET + the cold BPF program, write COLD_LAUNCH,
 /// then SIGCONT and watch its startup until it exits.
@@ -158,9 +162,10 @@ fn run_with_mode(pid: u32, record: Option<String>, mode: ActiveMode, catch_thres
             // tracepoints; watch mode needs the sys_enter/exit + sched_switch
             // set. Track probes (fork/exit) are always useful.
             let probe_res = match mode {
-                ActiveMode::Lock  => ebpf.attach_lock(),
-                ActiveMode::Catch => ebpf.attach_catch(),
-                _                 => ebpf.attach_watch(),
+                ActiveMode::Lock   => ebpf.attach_lock(),
+                ActiveMode::Catch  => ebpf.attach_catch(),
+                ActiveMode::Jitter => ebpf.attach_jitter(),
+                _                  => ebpf.attach_watch(),
             };
             let track_res = ebpf.attach_track();
 

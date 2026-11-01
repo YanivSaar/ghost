@@ -10,14 +10,14 @@ use aya_ebpf::{
     macros::map,
     maps::{Array, HashMap, PerCpuArray, PerCpuHashMap, RingBuf},
 };
-use ghost_common::{ColdStat, Config, FutexInflight, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{ColdStat, Config, FutexInflight, IrqStat, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 mod track;
 mod watch;
 mod lock;
 mod catch;
 mod cold;
-mod irq;
+mod jitter;
 mod startup;
 
 // ---- maps (ARCHITECTURE §5) ------------------------------------------------
@@ -63,9 +63,27 @@ static COLD_STAT: HashMap<u64, ColdStat> = HashMap::with_max_entries(16_384, 0);
 #[map]
 static COLD_LAUNCH: Array<u64> = Array::with_max_entries(1, 0);
 
-/// CPU -> IRQ handler entry timestamp (jitter mode).
+/// jitter lens: 1 iff the tracked target is currently running on this CPU.
+/// Flipped from 0↔1 on sched_switch (in-tracked / out-of-tracked).
 #[map]
-static IRQ_ENTER: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+static TARGET_ON_CPU: PerCpuArray<u8> = PerCpuArray::with_max_entries(1, 0);
+
+/// jitter lens: per-CPU hardirq-handler entry timestamp (0 = none in flight).
+#[map]
+static IRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+/// jitter lens: per-CPU softirq entry timestamp (0 = none in flight).
+#[map]
+static SOFTIRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+
+/// jitter lens: irq number -> aggregated (count, total_ns, max_ns) attributed
+/// to the target. Shared HashMap because the same irq can run on any CPU.
+#[map]
+static IRQ_STAT: HashMap<u32, IrqStat> = HashMap::with_max_entries(1024, 0);
+
+/// jitter lens: softirq vec_nr -> aggregated (count, total_ns, max_ns).
+#[map]
+static SOFTIRQ_STAT: HashMap<u32, IrqStat> = HashMap::with_max_entries(16, 0);
 
 /// Detail event stream for watch/lock/jitter/cold (MPSC, ordered, drop-counted).
 #[map]

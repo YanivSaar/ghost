@@ -20,7 +20,7 @@ use ratatui::{backend::CrosstermBackend, widgets::TableState, Terminal};
 
 use crate::{
     state::{ActiveMode, AppState},
-    tui::screens::{catch, cold, lock, overview},
+    tui::screens::{catch, cold, jitter, lock, overview},
 };
 
 pub struct Tui {
@@ -64,10 +64,12 @@ impl Tui {
                         (ActiveMode::Lock,  false) => lock::render_minimal(f, &st, ts),
                         (ActiveMode::Catch, true)  => catch::render_dense(f, &st, ts),
                         (ActiveMode::Catch, false) => catch::render_minimal(f, &st, ts),
-                        (ActiveMode::Cold,  true)  => cold::render_dense(f, &st, ts),
-                        (ActiveMode::Cold,  false) => cold::render_minimal(f, &st, ts),
-                        (_,                 true)  => overview::render_dense(f, &st, ts),
-                        (_,                 false) => overview::render_minimal(f, &st, ts),
+                        (ActiveMode::Cold,   true)  => cold::render_dense(f, &st, ts),
+                        (ActiveMode::Cold,   false) => cold::render_minimal(f, &st, ts),
+                        (ActiveMode::Jitter, true)  => jitter::render_dense(f, &st, ts),
+                        (ActiveMode::Jitter, false) => jitter::render_minimal(f, &st, ts),
+                        (_,                  true)  => overview::render_dense(f, &st, ts),
+                        (_,                  false) => overview::render_minimal(f, &st, ts),
                     }
                 })?;
             }

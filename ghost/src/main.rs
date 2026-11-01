@@ -141,10 +141,7 @@ fn main() -> anyhow::Result<()> {
             supervisor::run_catch(pid, cli.record, threshold_ns)
         }
         Some(Cmd::Cold   { cmd }) => supervisor::run_cold(cmd, cli.record),
-        Some(Cmd::Jitter { pid }) => {
-            eprintln!("ghost: jitter mode is Phase-6 (not yet implemented). Try: ghost snap {pid}");
-            Ok(())
-        }
+        Some(Cmd::Jitter { pid }) => supervisor::run_jitter(pid, cli.record),
         Some(Cmd::Replay { file, .. }) => {
             eprintln!("ghost: replay is Phase-2 (not yet implemented). file={file}");
             Ok(())

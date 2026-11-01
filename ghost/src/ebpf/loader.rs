@@ -7,7 +7,7 @@ use aya::{
     programs::TracePoint,
     Ebpf,
 };
-use ghost_common::{ColdStat, Config, LockStat, SyscallKey, SyscallStat, TrackInfo};
+use ghost_common::{ColdStat, Config, IrqStat, LockStat, SyscallKey, SyscallStat, TrackInfo};
 
 static GHOST_EBPF_BYTES: &[u8] = include_bytes_aligned!(
     concat!(env!("OUT_DIR"), "/ghost")
@@ -65,6 +65,34 @@ impl GhostEbpf {
         let mut res = AttachResult::default();
         res.cold_enter = attach_tp(&mut self.ebpf, "sys_enter_cold", "raw_syscalls", "sys_enter");
         res
+    }
+
+    pub fn attach_jitter(&mut self) -> AttachResult {
+        let mut res = AttachResult::default();
+        res.jitter_sched_switch = attach_tp(&mut self.ebpf, "jitter_sched_switch",   "sched", "sched_switch");
+        res.jitter_irq_entry    = attach_tp(&mut self.ebpf, "jitter_irq_entry",      "irq",   "irq_handler_entry");
+        res.jitter_irq_exit     = attach_tp(&mut self.ebpf, "jitter_irq_exit",       "irq",   "irq_handler_exit");
+        res.jitter_sirq_entry   = attach_tp(&mut self.ebpf, "jitter_softirq_entry",  "irq",   "softirq_entry");
+        res.jitter_sirq_exit    = attach_tp(&mut self.ebpf, "jitter_softirq_exit",   "irq",   "softirq_exit");
+        res
+    }
+
+    /// Read IRQ_STAT (hardirq nr -> IrqStat). Sorted by total_ns descending.
+    pub fn read_irq_stats(&self) -> Vec<(u32, IrqStat)> {
+        self.read_irq_map("IRQ_STAT")
+    }
+
+    /// Read SOFTIRQ_STAT (vec_nr -> IrqStat). Sorted by total_ns descending.
+    pub fn read_softirq_stats(&self) -> Vec<(u32, IrqStat)> {
+        self.read_irq_map("SOFTIRQ_STAT")
+    }
+
+    fn read_irq_map(&self, name: &str) -> Vec<(u32, IrqStat)> {
+        let Some(map) = self.ebpf.map(name) else { return vec![] };
+        let Ok(h) = HashMap::<_, u32, IrqStat>::try_from(map) else { return vec![] };
+        let mut out: Vec<(u32, IrqStat)> = h.iter().filter_map(|r| r.ok()).collect();
+        out.sort_by(|a, b| b.1.total_ns.cmp(&a.1.total_ns));
+        out
     }
 
     /// Record the wall-clock launch timestamp (monotonic ns, matches
@@ -162,6 +190,11 @@ pub struct AttachResult {
     pub catch_enter:  Option<String>,
     pub catch_exit:   Option<String>,
     pub cold_enter:   Option<String>,
+    pub jitter_sched_switch: Option<String>,
+    pub jitter_irq_entry:    Option<String>,
+    pub jitter_irq_exit:     Option<String>,
+    pub jitter_sirq_entry:   Option<String>,
+    pub jitter_sirq_exit:    Option<String>,
 }
 
 impl AttachResult {
@@ -172,6 +205,9 @@ impl AttachResult {
             &self.futex_enter, &self.futex_exit,
             &self.catch_enter, &self.catch_exit,
             &self.cold_enter,
+            &self.jitter_sched_switch,
+            &self.jitter_irq_entry,  &self.jitter_irq_exit,
+            &self.jitter_sirq_entry, &self.jitter_sirq_exit,
         ].iter().filter_map(|e| e.as_deref()).collect()
     }
 }

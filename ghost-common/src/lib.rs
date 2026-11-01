@@ -53,6 +53,17 @@ pub struct ColdStat {
     pub count:       u64,
 }
 
+/// Per-IRQ (or per-softirq-vec) occupancy stat accumulated while the tracked
+/// process is on-CPU on this CPU. Attribution model: an IRQ that fires while
+/// the target is running is a direct source of its tail latency.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct IrqStat {
+    pub count:    u64,
+    pub total_ns: u64,
+    pub max_ns:   u64,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct LockStat {
@@ -153,6 +164,7 @@ mod user_impls {
     unsafe impl aya::Pod for SyscallStat {}
     unsafe impl aya::Pod for LockStat {}
     unsafe impl aya::Pod for ColdStat {}
+    unsafe impl aya::Pod for IrqStat {}
     unsafe impl aya::Pod for FutexInflight {}
     unsafe impl aya::Pod for Config {}
     unsafe impl aya::Pod for SchedSwitchRecord {}

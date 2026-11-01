@@ -57,6 +57,9 @@ pub fn run(
             let locks = ebpf.read_lock_stats();
             // cold stats (cold lens) — cheap: empty vec if the map is empty.
             let cold = ebpf.read_cold_stats();
+            // jitter stats (jitter lens) — cheap: empty if maps are empty.
+            let hard = ebpf.read_irq_stats();
+            let soft = ebpf.read_softirq_stats();
 
             let mut st = state.write().unwrap();
 
@@ -75,6 +78,17 @@ pub fn run(
             st.cold.timeline = cold.into_iter()
                 .map(|(_pid, nr, s)| (nr, s.first_ts_ns, s.count))
                 .collect();
+
+            let hard_total: u64 = hard.iter().map(|(_, s)| s.total_ns).sum();
+            let soft_total: u64 = soft.iter().map(|(_, s)| s.total_ns).sum();
+            st.jitter.hard_irqs        = hard;
+            st.jitter.soft_irqs        = soft;
+            st.jitter.total_irq_ns     = hard_total;
+            st.jitter.total_softirq_ns = soft_total;
+            // involuntary_ctx comes from the sched_switch path we already have in
+            // the watch pipeline; mirror what the proc poller writes to watch
+            // so the jitter screen stays coherent even in watch-less sessions.
+            st.jitter.involuntary_ctx  = st.watch.involuntary_ctx;
         }
 
         std::thread::sleep(Duration::from_millis(10));
