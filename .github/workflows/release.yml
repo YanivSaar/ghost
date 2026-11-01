@@ -62,7 +62,7 @@ jobs:
 
       - name: Install build tools + LLVM for bpf-linker
         env:
-          LLVM_VERSION: "19"
+          LLVM_VERSION: "20"
         run: ./.github/scripts/install-llvm.sh
 
       - name: Install Rust toolchain

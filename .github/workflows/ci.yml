@@ -21,7 +21,7 @@ jobs:
         env:
           # bpf-linker's required LLVM major version. Bump this when
           # bpf-linker bumps its llvm-sys dep.
-          LLVM_VERSION: "19"
+          LLVM_VERSION: "20"
         run: ./.github/scripts/install-llvm.sh
 
       - name: Install Rust toolchain (from rust-toolchain.toml)
