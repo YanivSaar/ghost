@@ -37,3 +37,36 @@ impl SessionMeta {
         Self { pid, comm: comm.into(), mode: mode.into(), start_ns, hostname }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meta_fields_populated() {
+        let m = SessionMeta::new(42, "myproc", "watch");
+        assert_eq!(m.pid,  42);
+        assert_eq!(m.comm, "myproc");
+        assert_eq!(m.mode, "watch");
+        assert!(m.start_ns > 0);
+        // hostname should be set (non-empty on any real system).
+        assert!(!m.hostname.is_empty());
+    }
+
+    #[test]
+    fn meta_serialises_and_deserialises() {
+        let m = SessionMeta::new(99, "test", "snap");
+        let json = serde_json::to_vec(&m).unwrap();
+        let m2: SessionMeta = serde_json::from_slice(&json).unwrap();
+        assert_eq!(m2.pid,  m.pid);
+        assert_eq!(m2.comm, m.comm);
+        assert_eq!(m2.mode, m.mode);
+        assert_eq!(m2.start_ns, m.start_ns);
+    }
+
+    #[test]
+    fn magic_and_version_constants() {
+        assert_eq!(MAGIC, b"GHOST000");
+        assert_eq!(VERSION, 1);
+    }
+}

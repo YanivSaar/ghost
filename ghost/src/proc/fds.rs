@@ -76,7 +76,7 @@ pub fn read(pid: u32) -> Result<FdSummary> {
     Ok(summary)
 }
 
-fn classify(target: &str) -> FdKind {
+pub(crate) fn classify(target: &str) -> FdKind {
     if target.starts_with("socket:") {
         FdKind::Socket
     } else if target.starts_with("pipe:") {
@@ -91,5 +91,62 @@ fn classify(target: &str) -> FdKind {
         }
     } else {
         FdKind::Other
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_socket() {
+        assert_eq!(classify("socket:[12345]"),   FdKind::Socket);
+    }
+
+    #[test]
+    fn classify_pipe() {
+        assert_eq!(classify("pipe:[67890]"),     FdKind::Pipe);
+    }
+
+    #[test]
+    fn classify_anon_inode() {
+        assert_eq!(classify("anon_inode:eventfd"), FdKind::AnonymousInode);
+        assert_eq!(classify("anon_inode:[timerfd]"), FdKind::AnonymousInode);
+    }
+
+    #[test]
+    fn classify_regular_file() {
+        assert_eq!(classify("/etc/hosts"),       FdKind::File);
+        assert_eq!(classify("/proc/self/maps"),  FdKind::File);
+    }
+
+    #[test]
+    fn classify_device() {
+        assert_eq!(classify("/dev/null"),        FdKind::Device);
+        assert_eq!(classify("/dev/pts/0"),       FdKind::Device);
+    }
+
+    #[test]
+    fn classify_other() {
+        assert_eq!(classify("(deleted)"),        FdKind::Other);
+        assert_eq!(classify(""),                 FdKind::Other);
+    }
+
+    #[test]
+    fn fd_kind_as_str() {
+        assert_eq!(FdKind::File.as_str(),           "file");
+        assert_eq!(FdKind::Socket.as_str(),         "socket");
+        assert_eq!(FdKind::Pipe.as_str(),           "pipe");
+        assert_eq!(FdKind::AnonymousInode.as_str(), "anon_inode");
+        assert_eq!(FdKind::Device.as_str(),         "device");
+        assert_eq!(FdKind::Other.as_str(),          "other");
+    }
+
+    #[test]
+    fn read_current_process_fds() {
+        let pid = std::process::id();
+        let summary = read(pid).expect("read own /proc/fd");
+        // stdin/stdout/stderr should always be open
+        assert!(summary.total >= 3);
     }
 }

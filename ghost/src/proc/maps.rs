@@ -44,7 +44,7 @@ pub fn read_smaps_rollup(pid: u32) -> Option<SmasRollup> {
     Some(parse_smaps_rollup(&raw))
 }
 
-fn parse_maps(raw: &str) -> Vec<MapRegion> {
+pub(crate) fn parse_maps(raw: &str) -> Vec<MapRegion> {
     raw.lines().filter_map(parse_map_line).collect()
 }
 
@@ -64,7 +64,7 @@ fn parse_map_line(line: &str) -> Option<MapRegion> {
     Some(MapRegion { start, end, perms, offset, dev, inode, pathname })
 }
 
-fn parse_smaps_rollup(raw: &str) -> SmasRollup {
+pub(crate) fn parse_smaps_rollup(raw: &str) -> SmasRollup {
     let mut r = SmasRollup::default();
     for line in raw.lines() {
         let Some((key, val)) = line.split_once(':') else { continue };
@@ -85,4 +85,90 @@ fn parse_smaps_rollup(raw: &str) -> SmasRollup {
 
 fn parse_kb(val: &str) -> u64 {
     val.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_typical_maps() {
+        let raw = "\
+7f1a00000000-7f1a00001000 r-xp 00000000 fd:01 123456 /usr/lib/libc.so.6\n\
+7f1a00001000-7f1a00002000 rw-p 00001000 fd:01 123456 /usr/lib/libc.so.6\n\
+7f1a00002000-7f1a00003000 ---p 00000000 00:00 0 \n\
+7fff00000000-7fff00010000 rwxp 00000000 00:00 0 [stack]\n";
+
+        let regions = parse_maps(raw);
+        assert_eq!(regions.len(), 4);
+
+        let r0 = &regions[0];
+        assert_eq!(r0.start,    0x7f1a00000000);
+        assert_eq!(r0.end,      0x7f1a00001000);
+        assert_eq!(r0.perms,    "r-xp");
+        assert_eq!(r0.inode,    123456);
+        assert_eq!(r0.pathname, "/usr/lib/libc.so.6");
+        assert!(r0.is_exec());
+        assert!(!r0.is_write());
+        assert_eq!(r0.size_kb(), 4);
+
+        let r1 = &regions[1];
+        assert!(r1.is_write());
+        assert!(!r1.is_exec());
+
+        // anonymous region (empty pathname)
+        let r2 = &regions[2];
+        assert_eq!(r2.pathname, "");
+        assert!(r2.is_anon());
+
+        // [stack] is treated as anon
+        let r3 = &regions[3];
+        assert_eq!(r3.pathname, "[stack]");
+        assert!(r3.is_anon());
+    }
+
+    #[test]
+    fn size_kb_correct() {
+        let raw = "00400000-00401000 r-xp 00000000 fd:01 1 /bin/prog\n";
+        let regions = parse_maps(raw);
+        assert_eq!(regions[0].size_kb(), 4);
+    }
+
+    #[test]
+    fn malformed_line_skipped() {
+        let raw = "not-a-valid-line\n00400000-00401000 r-xp 0 fd:01 1 /x\n";
+        let regions = parse_maps(raw);
+        assert_eq!(regions.len(), 1);
+    }
+
+    #[test]
+    fn parse_smaps_rollup_fields() {
+        let raw = "\
+00000000-ffffffff ---p 00000000 00:00 0\n\
+Rss:            8192 kB\n\
+Pss:            4096 kB\n\
+Shared_Clean:    512 kB\n\
+Shared_Dirty:    256 kB\n\
+Private_Clean:   128 kB\n\
+Private_Dirty:  1024 kB\n\
+Swap:            768 kB\n";
+
+        let r = parse_smaps_rollup(raw);
+        assert_eq!(r.rss_kb,          8192);
+        assert_eq!(r.pss_kb,          4096);
+        assert_eq!(r.shared_clean_kb,  512);
+        assert_eq!(r.shared_dirty_kb,  256);
+        assert_eq!(r.private_clean_kb, 128);
+        assert_eq!(r.private_dirty_kb, 1024);
+        assert_eq!(r.swap_kb,          768);
+    }
+
+    #[test]
+    fn read_current_process_maps() {
+        let pid = std::process::id();
+        let regions = read_maps(pid).expect("read own /proc/maps");
+        assert!(!regions.is_empty(), "self must have at least one mapping");
+        // At minimum the executable itself should have a text region.
+        assert!(regions.iter().any(|r| r.is_exec()));
+    }
 }

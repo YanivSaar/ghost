@@ -35,7 +35,7 @@ impl Status {
     }
 }
 
-fn parse(raw: &str) -> Status {
+pub(crate) fn parse(raw: &str) -> Status {
     let mut s = Status::default();
     for line in raw.lines() {
         let Some((key, val)) = line.split_once(':') else { continue };
@@ -75,4 +75,86 @@ fn parse(raw: &str) -> Status {
 
 fn parse_kb(val: &str) -> u64 {
     val.split_whitespace().next().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = "\
+Name:\tnginx
+Uid:\t1000\t1001\t1001\t1001
+Gid:\t2000\t2001\t2001\t2001
+Threads:\t4
+VmPeak:\t 51200 kB
+VmSize:\t 40960 kB
+VmRSS:\t  8192 kB
+VmSwap:\t   512 kB
+VmExe:\t  1024 kB
+VmLib:\t  4096 kB
+voluntary_ctxt_switches:\t150
+nonvoluntary_ctxt_switches:\t20
+SigPnd:\t0000000000000000
+SigBlk:\t0000000000010000
+SigIgn:\t0000000000001000
+SigCgt:\t0000000180005202
+NoNewPrivs:\t1
+Seccomp:\t2
+";
+
+    #[test]
+    fn parses_all_fields() {
+        let s = parse(SAMPLE);
+        assert_eq!(s.name,                     "nginx");
+        assert_eq!(s.uid_real,                 1000);
+        assert_eq!(s.uid_effective,            1001);
+        assert_eq!(s.gid_real,                 2000);
+        assert_eq!(s.gid_effective,            2001);
+        assert_eq!(s.threads,                  4);
+        assert_eq!(s.vm_peak_kb,               51200);
+        assert_eq!(s.vm_size_kb,               40960);
+        assert_eq!(s.vm_rss_kb,                8192);
+        assert_eq!(s.vm_swap_kb,               512);
+        assert_eq!(s.vm_exe_kb,                1024);
+        assert_eq!(s.vm_lib_kb,                4096);
+        assert_eq!(s.voluntary_ctxt_switches,  150);
+        assert_eq!(s.nonvoluntary_ctxt_switches, 20);
+        assert_eq!(s.sig_pending,              "0000000000000000");
+        assert_eq!(s.sig_blocked,              "0000000000010000");
+        assert!(s.no_new_privs);
+        assert_eq!(s.seccomp,                  2);
+    }
+
+    #[test]
+    fn empty_input_returns_default() {
+        let s = parse("");
+        assert_eq!(s.name, "");
+        assert_eq!(s.threads, 0);
+        assert_eq!(s.vm_rss_kb, 0);
+    }
+
+    #[test]
+    fn unknown_keys_are_ignored() {
+        let s = parse("FutureKey:\tsome value\nName:\tmyproc\n");
+        assert_eq!(s.name, "myproc");
+    }
+
+    #[test]
+    fn parse_kb_handles_unit_suffix() {
+        // "1024 kB" → 1024
+        assert_eq!(parse_kb("1024 kB"), 1024);
+        // plain number
+        assert_eq!(parse_kb("512"), 512);
+        // zero
+        assert_eq!(parse_kb("0 kB"), 0);
+    }
+
+    #[test]
+    fn read_current_process() {
+        let pid = std::process::id();
+        let s = Status::read(pid).expect("read own /proc/status");
+        assert!(!s.name.is_empty());
+        assert!(s.threads >= 1);
+        assert!(s.vm_rss_kb > 0);
+    }
 }

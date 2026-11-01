@@ -105,3 +105,91 @@ fn tcp_state(n: u8) -> &'static str {
         _ => "UNKNOWN",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helpers that expose private functions for testing.
+    fn addr(hex: &str, is_v6: bool) -> Option<String> {
+        decode_addr(hex, is_v6)
+    }
+
+    fn net_line(line: &str, proto: &'static str, is_v6: bool) -> Option<SocketEntry> {
+        parse_net_line(line, proto, is_v6)
+    }
+
+    // ── decode_addr ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn decode_loopback_listen() {
+        // 0100007F:9C40 → 127.0.0.1:40000
+        let a = addr("0100007F:9C40", false).unwrap();
+        assert_eq!(a, "127.0.0.1:40000");
+    }
+
+    #[test]
+    fn decode_any_zero_port() {
+        // 00000000:0000 → 0.0.0.0:0
+        let a = addr("00000000:0000", false).unwrap();
+        assert_eq!(a, "0.0.0.0:0");
+    }
+
+    #[test]
+    fn decode_addr_invalid_returns_none() {
+        assert!(addr("GGGGGGGG:0000", false).is_none());
+        assert!(addr("tooshort:80", false).is_none());
+    }
+
+    // ── tcp_state ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn tcp_state_known_values() {
+        assert_eq!(tcp_state(1),  "ESTABLISHED");
+        assert_eq!(tcp_state(10), "LISTEN");
+        assert_eq!(tcp_state(6),  "TIME_WAIT");
+        assert_eq!(tcp_state(0),  "UNKNOWN");
+        assert_eq!(tcp_state(99), "UNKNOWN");
+    }
+
+    // ── parse_net_line ────────────────────────────────────────────────────────
+
+    #[test]
+    fn parse_listen_line() {
+        // Typical /proc/net/tcp LISTEN entry:
+        // idx  local           remote         st  ...     uid  timeout  inode
+        let line = "  0: 0100007F:1F40 00000000:0000 0A \
+                    00000000:00000000 00:00000000 00000000   1000        0 99999 \
+                    1 0000000000000000 100 0 0 10 0";
+        let e = net_line(line, "tcp", false).unwrap();
+        assert_eq!(e.local_addr,  "127.0.0.1:8000");
+        assert_eq!(e.remote_addr, "0.0.0.0:0");
+        assert_eq!(e.state,       "LISTEN");
+        assert_eq!(e.proto,       "tcp");
+        assert_eq!(e.inode,       99999);
+    }
+
+    #[test]
+    fn parse_established_line() {
+        let line = "  1: 0101007F:D2F8 0101007F:1F40 01 \
+                    00000000:00000000 00:00000000 00000000   1000        0 88888 \
+                    1 0000000000000000 20 4 26 10 -1";
+        let e = net_line(line, "tcp", false).unwrap();
+        assert_eq!(e.state, "ESTABLISHED");
+        assert_eq!(e.inode, 88888);
+    }
+
+    #[test]
+    fn malformed_line_returns_none() {
+        assert!(net_line("not a valid line at all", "tcp", false).is_none());
+    }
+
+    // ── socket_inodes (via read) ──────────────────────────────────────────────
+
+    #[test]
+    fn read_current_process_does_not_panic() {
+        let pid = std::process::id();
+        // The test process has no TCP sockets, so result may be empty — that's fine.
+        let _ = read(pid);
+    }
+}

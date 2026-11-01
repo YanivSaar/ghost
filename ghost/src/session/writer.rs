@@ -54,3 +54,71 @@ impl SessionWriter {
         self.out.flush().context("flushing session file")
     }
 }
+
+#[cfg(test)]
+mod writer_reader_tests {
+    use super::*;
+    use crate::session::{format::SessionMeta, reader::SessionReader};
+
+    fn tmp_path(name: &str) -> String {
+        format!("{}/{}", std::env::temp_dir().display(), name)
+    }
+
+    #[test]
+    fn round_trip_header() {
+        let path = tmp_path("ghost_test_header.ghost");
+        let meta = SessionMeta::new(1234, "test", "watch");
+        {
+            let mut w = SessionWriter::open(&path, &meta).unwrap();
+            w.flush().unwrap();
+        }
+        let r = SessionReader::open(&path).unwrap();
+        assert_eq!(r.meta.pid,  1234);
+        assert_eq!(r.meta.comm, "test");
+        assert_eq!(r.meta.mode, "watch");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn round_trip_frames() {
+        let path = tmp_path("ghost_test_frames.ghost");
+        let meta = SessionMeta::new(42, "proc", "snap");
+        let payload1 = b"hello world";
+        let payload2 = b"\xde\xad\xbe\xef";
+        {
+            let mut w = SessionWriter::open(&path, &meta).unwrap();
+            w.write_frame(2, payload1).unwrap();
+            w.write_frame(8, payload2).unwrap();
+            w.flush().unwrap();
+        }
+
+        let mut r = SessionReader::open(&path).unwrap();
+
+        let (kind, _delta, body) = r.next_frame().unwrap().expect("frame 1 missing");
+        assert_eq!(kind, 2);
+        assert_eq!(body, payload1);
+
+        let (kind, _delta, body) = r.next_frame().unwrap().expect("frame 2 missing");
+        assert_eq!(kind, 8);
+        assert_eq!(body, payload2);
+
+        assert!(r.next_frame().unwrap().is_none(), "expected EOF");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn wrong_magic_returns_error() {
+        let path = tmp_path("ghost_test_bad_magic.ghost");
+        std::fs::write(&path, b"BADMAGIC00000000").unwrap();
+        assert!(SessionReader::open(&path).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn empty_file_returns_error() {
+        let path = tmp_path("ghost_test_empty.ghost");
+        std::fs::write(&path, b"").unwrap();
+        assert!(SessionReader::open(&path).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+}

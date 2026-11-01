@@ -34,7 +34,7 @@ impl Stat {
     }
 }
 
-fn parse(raw: &str) -> Result<Stat> {
+pub(crate) fn parse(raw: &str) -> Result<Stat> {
     let raw = raw.trim_end();
 
     // The comm field is the last `(…)` block before the state letter.
@@ -90,6 +90,107 @@ fn parse(raw: &str) -> Result<Stat> {
 }
 
 /// CPU ticks → seconds using the configured clock tick rate.
+// ── tests ─────────────────────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A realistic /proc/{pid}/stat line (52 fields, all common values)
+    const SAMPLE: &str = "1234 (my-proc) S 1000 1234 1234 0 -1 4194304 \
+        100 200 0 0 50 30 0 0 20 0 4 0 12345678 5242880 1280 \
+        18446744073709551615 94000 95000 140000 0 0 0 0 0 0 0 0 0 17 2 0 \
+        0 0 0 94100 94200 95000 140001 140002 140002 140003 0";
+
+    #[test]
+    fn parses_all_fields() {
+        let s = parse(SAMPLE).unwrap();
+        assert_eq!(s.pid,         1234);
+        assert_eq!(s.comm,        "my-proc");
+        assert_eq!(s.state,       'S');
+        assert_eq!(s.ppid,        1000);
+        assert_eq!(s.pgrp,        1234);
+        assert_eq!(s.session,     1234);
+        assert_eq!(s.utime_ticks, 50);
+        assert_eq!(s.stime_ticks, 30);
+        assert_eq!(s.priority,    20);
+        assert_eq!(s.nice,        0);
+        assert_eq!(s.num_threads, 4);
+        assert_eq!(s.start_time,  12345678);
+        assert_eq!(s.vsize_bytes, 5242880);
+        assert_eq!(s.rss_pages,   1280);
+        assert_eq!(s.last_cpu,    2);
+    }
+
+    #[test]
+    fn comm_with_spaces_and_parens() {
+        // comm = "(kworker/u:1)" — contains parens; rfind must strip correctly
+        let line = "42 ((kworker/u:1)) R 1 42 42 0 -1 4194304 \
+            0 0 0 0 0 0 0 0 20 0 1 0 100 0 0 \
+            18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 17 3 0 0 \
+            0 0 0 0 0 0 0 0 0";
+        let s = parse(line).unwrap();
+        assert_eq!(s.pid,   42);
+        assert_eq!(s.comm,  "(kworker/u:1)");
+        assert_eq!(s.state, 'R');
+    }
+
+    #[test]
+    fn comm_with_internal_spaces() {
+        let line = "99 (my proc name) D 0 99 99 0 -1 4194304 \
+            0 0 0 0 10 5 0 0 20 0 1 0 999 4096 1 \
+            18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 \
+            0 0 0 0 0 0 0 0 0";
+        let s = parse(line).unwrap();
+        assert_eq!(s.comm,  "my proc name");
+        assert_eq!(s.state, 'D');
+    }
+
+    #[test]
+    fn all_state_chars_parsed() {
+        for (ch, _) in [('R', "running"), ('S', "sleeping"), ('D', "disk-wait"),
+                        ('Z', "zombie"),  ('T', "stopped"),  ('I', "idle")] {
+            let line = format!("1 (x) {ch} 0 1 1 0 -1 4194304 \
+                0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 \
+                18446744073709551615 0 0 0 0 0 0 0 0 0 0 0 17 0 0 0 \
+                0 0 0 0 0 0 0 0 0");
+            let s = parse(&line).unwrap();
+            assert_eq!(s.state, ch, "state char {ch}");
+        }
+    }
+
+    #[test]
+    fn ticks_to_secs_zero() {
+        assert_eq!(ticks_to_secs(0), 0.0);
+    }
+
+    #[test]
+    fn ticks_to_secs_one_second() {
+        // At 100 Hz, 100 ticks = 1.0 second.
+        let secs = ticks_to_secs(100);
+        // Actual Hz might be 250 on this kernel, so just check > 0 and < 2.
+        assert!(secs > 0.0, "ticks_to_secs(100) must be > 0");
+        assert!(secs <= 2.0, "ticks_to_secs(100) must be ≤ 2s");
+    }
+
+    #[test]
+    fn missing_fields_returns_error() {
+        assert!(parse("1 (x) S 0").is_err());
+    }
+
+    #[test]
+    fn no_parens_returns_error() {
+        assert!(parse("1 x S 0 1 1 0 -1 4194304 0 0 0 0 0 0 0 0 20 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0").is_err());
+    }
+
+    #[test]
+    fn read_current_process() {
+        let pid = std::process::id();
+        let s = Stat::read(pid).expect("read own /proc/stat");
+        assert_eq!(s.pid, pid);
+        assert!(s.num_threads >= 1);
+        assert!(s.start_time > 0);
+    }
+}
 pub fn ticks_to_secs(ticks: u64) -> f64 {
     let hz = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
     let hz = if hz <= 0 { 100 } else { hz as u64 };
