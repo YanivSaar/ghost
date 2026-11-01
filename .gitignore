@@ -1,0 +1,31 @@
+# Rust build artifacts
+/target/
+ghost/target/
+ghost-ebpf/target/
+ghost-common/target/
+**/*.rs.bk
+Cargo.lock
+
+# Compiled BPF objects
+*.o
+*.bpf.o
+
+# Session recordings
+*.ghost
+
+# Editor / OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Rendered HTML (generated from ARCHITECTURE.md; keep source, drop build artifact)
+docs/architecture.html

@@ -1,0 +1,12 @@
+[package]
+name = "ghost-common"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# `user` pulls in std for the host side; the bpf side builds no_std.
+[features]
+default = []
+user = []
+
+[dependencies]

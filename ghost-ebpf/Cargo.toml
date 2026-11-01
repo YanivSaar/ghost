@@ -1,0 +1,20 @@
+[package]
+name = "ghost-ebpf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ghost-common = { path = "../ghost-common" }
+# Pin exact versions when scaffolding Phase 0 against a chosen aya release.
+aya-ebpf = "0.1"
+aya-log-ebpf = "0.1"
+
+[[bin]]
+name = "ghost"
+path = "src/main.rs"
+
+[profile.dev]
+opt-level = 3
+[profile.release]
+lto = true

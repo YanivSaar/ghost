@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["ghost", "ghost-ebpf", "ghost-common"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["ghost contributors"]
+repository = ""
+
+# Build small, fast BPF + a lean release binary.
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
