@@ -70,7 +70,11 @@ fn resolve(spec: &str) -> Result<PathBuf> {
     // Rule 1: path-shaped input (contains a '/') is treated as a path.
     if spec.contains('/') {
         let p = Path::new(spec);
-        if p.is_absolute() {
+        // Only honor absolute paths that are actually rooted under the
+        // cgroup mount; a leading-slash kernel-relative spelling like
+        // `/system.slice/foo.service` (documented as tolerated) must be
+        // rebased, not used verbatim.
+        if p.is_absolute() && p.starts_with(CGROUP_ROOT) {
             return Ok(p.to_path_buf());
         }
         return Ok(Path::new(CGROUP_ROOT).join(spec.trim_start_matches('/')));
@@ -149,8 +153,11 @@ mod tests {
 
     #[test]
     fn resolve_leading_slash_tolerated() {
+        // Kernel-relative spelling (absolute but not under the cgroup
+        // mount) must be rebased under /sys/fs/cgroup, matching the
+        // documented contract in the module header.
         let p = resolve("/system.slice/foo.service").unwrap();
-        assert_eq!(p, PathBuf::from("/system.slice/foo.service"));
+        assert_eq!(p, PathBuf::from("/sys/fs/cgroup/system.slice/foo.service"));
     }
 
     #[test]

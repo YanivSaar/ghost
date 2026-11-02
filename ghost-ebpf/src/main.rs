@@ -69,13 +69,15 @@ static COLD_LAUNCH: Array<u64> = Array::with_max_entries(1, 0);
 #[map]
 static TARGET_ON_CPU: PerCpuArray<u8> = PerCpuArray::with_max_entries(1, 0);
 
-/// jitter lens: per-CPU hardirq-handler entry timestamp (0 = none in flight).
+/// jitter lens: per-CPU hardirq handler state. Slot 0 = outer-handler
+/// entry timestamp (0 = idle), slot 1 = nesting depth. Nesting-aware so
+/// an inner handler can't clobber the outer's ts and poison attribution.
 #[map]
-static IRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+static IRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(2, 0);
 
-/// jitter lens: per-CPU softirq entry timestamp (0 = none in flight).
+/// jitter lens: per-CPU softirq state, same layout as IRQ_INFLIGHT.
 #[map]
-static SOFTIRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(1, 0);
+static SOFTIRQ_INFLIGHT: PerCpuArray<u64> = PerCpuArray::with_max_entries(2, 0);
 
 /// jitter lens: irq number -> aggregated (count, total_ns, max_ns) attributed
 /// to the target. Shared HashMap because the same irq can run on any CPU.

@@ -3,4 +3,5 @@
 //! acquisition (ARCHITECTURE §10).
 pub mod app;
 pub mod screens;
+pub mod syscalls;
 pub mod widgets;

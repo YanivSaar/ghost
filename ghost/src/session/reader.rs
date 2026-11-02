@@ -10,6 +10,13 @@ use std::{
 
 use super::format::{SessionMeta, MAGIC, VERSION};
 
+// Session files come from other machines / untrusted sources. Clamp the
+// per-field allocations we're willing to make from a header's size word
+// so a corrupted or hostile file can't demand gigabytes before we even
+// see any data.
+const MAX_META_LEN: usize = 1 << 20; // 1 MiB JSON header
+const MAX_FRAME_LEN: usize = 64 << 20; // 64 MiB per compressed frame
+
 pub struct SessionReader {
     inner: BufReader<File>,
     pub meta: SessionMeta,
@@ -39,6 +46,9 @@ impl SessionReader {
         let mut meta_len_bytes = [0u8; 8];
         r.read_exact(&mut meta_len_bytes)?;
         let meta_len = u64::from_le_bytes(meta_len_bytes) as usize;
+        if meta_len > MAX_META_LEN {
+            bail!("{path}: metadata length {meta_len} exceeds {MAX_META_LEN}");
+        }
 
         let mut meta_bytes = vec![0u8; meta_len];
         r.read_exact(&mut meta_bytes)?;
@@ -60,6 +70,9 @@ impl SessionReader {
         let kind = header[0];
         let ts_delta = u32::from_le_bytes(header[1..5].try_into().unwrap());
         let clen = u32::from_le_bytes(header[5..9].try_into().unwrap()) as usize;
+        if clen > MAX_FRAME_LEN {
+            bail!("session frame length {clen} exceeds {MAX_FRAME_LEN}");
+        }
 
         let mut compressed = vec![0u8; clen];
         self.inner.read_exact(&mut compressed)?;

@@ -63,9 +63,18 @@ unsafe fn try_irq_entry(_ctx: TracePointContext) -> Result<u32, i64> {
         return Ok(0);
     }
 
-    let ts = bpf_ktime_get_ns();
-    if let Some(slot) = IRQ_INFLIGHT.get_ptr_mut(0) {
-        *slot = ts;
+    // Nesting-aware: only the outermost entry stamps the timestamp;
+    // inner nested entries just bump depth. This prevents the inner
+    // handler from clobbering the outer handler's start-ts.
+    let depth = IRQ_INFLIGHT.get(1).copied().unwrap_or(0);
+    if depth == 0 {
+        let ts = bpf_ktime_get_ns();
+        if let Some(slot) = IRQ_INFLIGHT.get_ptr_mut(0) {
+            *slot = ts;
+        }
+    }
+    if let Some(d) = IRQ_INFLIGHT.get_ptr_mut(1) {
+        *d = depth.saturating_add(1);
     }
     Ok(0)
 }
@@ -78,6 +87,22 @@ pub fn jitter_irq_exit(ctx: TracePointContext) -> u32 {
 unsafe fn try_irq_exit(ctx: TracePointContext) -> Result<u32, i64> {
     let on = TARGET_ON_CPU.get(0).copied().unwrap_or(0);
     if on == 0 {
+        return Ok(0);
+    }
+
+    let depth = IRQ_INFLIGHT.get(1).copied().unwrap_or(0);
+    if depth == 0 {
+        // Exit without entry — out-of-order or lost; nothing to do.
+        return Ok(0);
+    }
+
+    // Decrement depth unconditionally.
+    if let Some(d) = IRQ_INFLIGHT.get_ptr_mut(1) {
+        *d = depth - 1;
+    }
+
+    // Only attribute on the outermost exit (depth was 1).
+    if depth != 1 {
         return Ok(0);
     }
 
@@ -111,9 +136,15 @@ unsafe fn try_softirq_entry(_ctx: TracePointContext) -> Result<u32, i64> {
     if on == 0 {
         return Ok(0);
     }
-    let ts = bpf_ktime_get_ns();
-    if let Some(slot) = SOFTIRQ_INFLIGHT.get_ptr_mut(0) {
-        *slot = ts;
+    let depth = SOFTIRQ_INFLIGHT.get(1).copied().unwrap_or(0);
+    if depth == 0 {
+        let ts = bpf_ktime_get_ns();
+        if let Some(slot) = SOFTIRQ_INFLIGHT.get_ptr_mut(0) {
+            *slot = ts;
+        }
+    }
+    if let Some(d) = SOFTIRQ_INFLIGHT.get_ptr_mut(1) {
+        *d = depth.saturating_add(1);
     }
     Ok(0)
 }
@@ -126,6 +157,17 @@ pub fn jitter_softirq_exit(ctx: TracePointContext) -> u32 {
 unsafe fn try_softirq_exit(ctx: TracePointContext) -> Result<u32, i64> {
     let on = TARGET_ON_CPU.get(0).copied().unwrap_or(0);
     if on == 0 {
+        return Ok(0);
+    }
+
+    let depth = SOFTIRQ_INFLIGHT.get(1).copied().unwrap_or(0);
+    if depth == 0 {
+        return Ok(0);
+    }
+    if let Some(d) = SOFTIRQ_INFLIGHT.get_ptr_mut(1) {
+        *d = depth - 1;
+    }
+    if depth != 1 {
         return Ok(0);
     }
 
