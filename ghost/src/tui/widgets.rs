@@ -96,3 +96,72 @@ pub fn status_bar(f: &mut Frame, area: Rect, spans: Vec<Span<'_>>) {
         area,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn with_test_frame<F: FnOnce(&mut Frame, Rect)>(w: u16, h: u16, body: F) {
+        let backend = TestBackend::new(w, h);
+        let mut term = Terminal::new(backend).unwrap();
+        term.draw(|f| {
+            let area = f.area();
+            body(f, area);
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn cpu_sparkline_renders_empty_without_panic() {
+        with_test_frame(40, 3, |f, area| {
+            cpu_sparkline(f, area, &[], "idle");
+        });
+    }
+
+    #[test]
+    fn cpu_sparkline_clamps_values_above_100() {
+        with_test_frame(40, 3, |f, area| {
+            cpu_sparkline(f, area, &[0.0, 25.0, 50.0, 75.0, 100.0, 150.0], "cpu");
+        });
+    }
+
+    #[test]
+    fn syscall_table_renders_zero_rows() {
+        with_test_frame(80, 8, |f, area| {
+            let mut st = TableState::default();
+            syscall_table(f, area, &[], &mut st);
+        });
+    }
+
+    #[test]
+    fn syscall_table_renders_sample_rows() {
+        with_test_frame(80, 8, |f, area| {
+            let mut st = TableState::default();
+            let rows: Vec<(u32, &str, u64, u64, u64)> = vec![
+                (0, "read", 10, 5, 1),
+                (1, "write", 7, 3, 2),
+                (202, "futex", 500, 1234, 42),
+            ];
+            syscall_table(f, area, &rows, &mut st);
+        });
+    }
+
+    #[test]
+    fn status_bar_renders_empty_and_populated() {
+        with_test_frame(60, 1, |f, area| {
+            status_bar(f, area, vec![]);
+        });
+        with_test_frame(60, 1, |f, area| {
+            status_bar(
+                f,
+                area,
+                vec![
+                    Span::raw("q:quit  "),
+                    Span::styled("WARN", Style::default().fg(Color::Red)),
+                ],
+            );
+        });
+    }
+}

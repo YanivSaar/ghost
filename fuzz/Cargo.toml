@@ -1,0 +1,23 @@
+[package]
+name = "ghost-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+ghost = { path = "../ghost" }
+
+[[bin]]
+name = "session_reader"
+path = "fuzz_targets/session_reader.rs"
+test = false
+doc = false
+bench = false
+
+# cargo-fuzz manages its own `fuzz/target/` and corpus layout; keep it
+# outside the main workspace so the two don't conflict.
+[workspace]

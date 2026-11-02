@@ -73,3 +73,38 @@ fn read_link(pid: u32, name: &str) -> String {
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_else(|_| "?".into())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collect_against_self_succeeds() {
+        let pid = std::process::id();
+        let snap = ProcSnapshot::collect(pid).expect("ProcSnapshot::collect on self");
+        assert_eq!(snap.stat.pid, pid, "stat.pid mismatch");
+        assert!(!snap.status.name.is_empty(), "status.name should be set");
+    }
+
+    #[test]
+    fn collect_against_nonexistent_pid_errors() {
+        // PID 1<<30 is almost certainly not a live process on any realistic host.
+        let r = ProcSnapshot::collect(1 << 30);
+        assert!(r.is_err(), "collect on dead pid must error");
+    }
+
+    #[test]
+    fn read_cmdline_self_nonempty() {
+        let s = read_cmdline(std::process::id());
+        assert!(
+            !s.is_empty(),
+            "self cmdline must be non-empty under cargo test"
+        );
+    }
+
+    #[test]
+    fn read_link_question_mark_on_missing() {
+        // PID 0 has no /proc entry.
+        assert_eq!(read_link(0, "cwd"), "?");
+    }
+}

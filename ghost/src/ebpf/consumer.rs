@@ -134,7 +134,7 @@ fn tee(sink: &RecordSink, bytes: &[u8]) {
     }
 }
 
-pub(crate) fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
+pub fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     let Some(&kind_byte) = bytes.first() else {
         return;
     };
@@ -156,7 +156,7 @@ pub(crate) fn dispatch_capture(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     });
 }
 
-pub(crate) fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
+pub fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
     let Some(&kind_byte) = bytes.first() else {
         return;
     };
@@ -183,5 +183,48 @@ pub(crate) fn dispatch_event(bytes: &[u8], state: &Arc<RwLock<AppState>>) {
         if rec.pid == st.pid {
             st.target_gone = true;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Full dispatch coverage lives in `ghost/tests/consumer_dispatch.rs`.
+    //! Here we lock down the empty-slice and unknown-kind early-return
+    //! paths so a future refactor can't accidentally let a short slice
+    //! reach `read_unaligned`.
+    use super::*;
+    use crate::state::AppState;
+
+    fn s(pid: u32) -> Arc<RwLock<AppState>> {
+        Arc::new(RwLock::new(AppState::new(pid, "x".into())))
+    }
+
+    #[test]
+    fn dispatch_event_handles_empty_slice() {
+        dispatch_event(&[], &s(1));
+    }
+
+    #[test]
+    fn dispatch_capture_handles_empty_slice() {
+        dispatch_capture(&[], &s(1));
+    }
+
+    #[test]
+    fn dispatch_event_ignores_unknown_kind() {
+        let st = s(1);
+        dispatch_event(&[0xFF, 0, 0, 0], &st);
+        let v = st.read().unwrap();
+        assert_eq!(v.watch.voluntary_ctx, 0);
+        assert_eq!(v.watch.involuntary_ctx, 0);
+        assert!(!v.target_gone);
+    }
+
+    #[test]
+    fn dispatch_capture_ignores_wrong_kind() {
+        let st = s(1);
+        // Enough bytes to pass a size check — but the kind byte is wrong.
+        let bytes = [EventKind::SchedSwitch as u8; 64];
+        dispatch_capture(&bytes, &st);
+        assert_eq!(st.read().unwrap().catch.total_hits, 0);
     }
 }
