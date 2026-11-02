@@ -11,6 +11,7 @@ use ratatui::{
 
 use super::super::widgets;
 use crate::state::AppState;
+use crate::tui::syscalls::syscall_name;
 
 pub fn render_dense(f: &mut Frame, state: &AppState, table_state: &mut TableState) {
     let area = f.area();
@@ -182,41 +183,4 @@ fn render_keybind_bar(f: &mut Frame, area: Rect, state: &AppState) {
         area,
         vec![Span::raw("  q:quit  v:toggle-view  ↑↓:scroll"), err_span],
     );
-}
-
-// Minimal syscall-name map; mirrors overview.rs. Kept local so the two can
-// diverge if catch wants to show, say, families (fs/net/mem/ipc) later.
-fn syscall_name(nr: u32) -> &'static str {
-    match nr {
-        0 => "read",
-        1 => "write",
-        2 => "open",
-        3 => "close",
-        7 => "poll",
-        9 => "mmap",
-        11 => "munmap",
-        17 => "pread64",
-        18 => "pwrite64",
-        35 => "nanosleep",
-        41 => "socket",
-        42 => "connect",
-        43 => "accept",
-        44 => "sendto",
-        45 => "recvfrom",
-        46 => "sendmsg",
-        47 => "recvmsg",
-        56 => "clone",
-        59 => "execve",
-        61 => "wait4",
-        74 => "fsync",
-        202 => "futex",
-        230 => "clock_nanosleep",
-        232 => "epoll_wait",
-        257 => "openat",
-        262 => "newfstatat",
-        271 => "ppoll",
-        281 => "epoll_pwait",
-        290 => "accept4",
-        _ => "?",
-    }
 }

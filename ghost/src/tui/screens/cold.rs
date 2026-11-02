@@ -11,6 +11,7 @@ use ratatui::{
 
 use super::super::widgets;
 use crate::state::AppState;
+use crate::tui::syscalls::syscall_name;
 
 pub fn render_dense(f: &mut Frame, state: &AppState, table_state: &mut TableState) {
     let area = f.area();
@@ -193,56 +194,4 @@ fn render_keybind_bar(f: &mut Frame, area: Rect, state: &AppState) {
         area,
         vec![Span::raw("  q:quit  v:toggle-view  ↑↓:scroll"), err_span],
     );
-}
-
-fn syscall_name(nr: u32) -> &'static str {
-    match nr {
-        0 => "read",
-        1 => "write",
-        2 => "open",
-        3 => "close",
-        4 => "stat",
-        5 => "fstat",
-        6 => "lstat",
-        7 => "poll",
-        9 => "mmap",
-        10 => "mprotect",
-        11 => "munmap",
-        12 => "brk",
-        13 => "rt_sigaction",
-        14 => "rt_sigprocmask",
-        17 => "pread64",
-        20 => "writev",
-        21 => "access",
-        35 => "nanosleep",
-        39 => "getpid",
-        41 => "socket",
-        42 => "connect",
-        56 => "clone",
-        59 => "execve",
-        60 => "exit",
-        61 => "wait4",
-        72 => "fcntl",
-        78 => "getdents",
-        79 => "getcwd",
-        89 => "readlink",
-        96 => "gettimeofday",
-        102 => "getuid",
-        158 => "arch_prctl",
-        202 => "futex",
-        218 => "set_tid_address",
-        231 => "exit_group",
-        232 => "epoll_wait",
-        233 => "epoll_ctl",
-        257 => "openat",
-        262 => "newfstatat",
-        267 => "readlinkat",
-        273 => "set_robust_list",
-        281 => "epoll_pwait",
-        293 => "epoll_create1",
-        302 => "prlimit64",
-        318 => "getrandom",
-        334 => "rseq",
-        _ => "?",
-    }
 }

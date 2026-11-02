@@ -287,7 +287,14 @@ fn replay_loop(
         let (_kind, delta_us, bytes) = frame;
         cumulative_us = cumulative_us.saturating_add(delta_us as u64);
 
-        if cumulative_us > seek_us && delta_us > 0 {
+        if cumulative_us <= seek_us {
+            // Still inside the seek window — drop the frame entirely so
+            // aggregates (WatchState, CatchLensState, …) don't include
+            // the span the user explicitly asked to skip.
+            continue;
+        }
+
+        if delta_us > 0 {
             // Cap pacing at 100ms so very long idle gaps don't freeze replay.
             let sleep_us = (delta_us as u64).min(100_000);
             std::thread::sleep(Duration::from_micros(sleep_us));
@@ -541,8 +548,17 @@ fn proc_poller(target: PidTarget, state: Arc<RwLock<AppState>>, stop: Arc<Atomic
                     }
                 }
                 st.watch.prev_cpu_ticks = Some(curr_ticks);
-                st.watch.voluntary_ctx = snap.status.voluntary_ctxt_switches;
-                st.watch.involuntary_ctx = snap.status.nonvoluntary_ctxt_switches;
+                // /proc reports counters for the representative PID only.
+                // For single-PID targets that's authoritative (lifetime
+                // count including pre-attach history); for multi-PID
+                // targets (tree, cgroup) it would discard every switch
+                // we're already summing from sched_switch across the
+                // other members, so defer to the eBPF-side counters in
+                // that case.
+                if st.tracked_count <= 1 {
+                    st.watch.voluntary_ctx = snap.status.voluntary_ctxt_switches;
+                    st.watch.involuntary_ctx = snap.status.nonvoluntary_ctxt_switches;
+                }
                 st.snap = Some(snap);
             }
             Err(_) => {

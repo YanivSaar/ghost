@@ -43,7 +43,8 @@ impl CmdHandle {
                 libc::execvp(c_argv_ptrs[0], c_argv_ptrs.as_ptr());
                 // execvp returned → it failed.
                 let errno = *libc::__errno_location();
-                libc::write(2, b"ghost cold: execvp failed\n".as_ptr() as _, 25);
+                let msg = b"ghost cold: execvp failed\n";
+                libc::write(2, msg.as_ptr() as _, msg.len());
                 libc::_exit(127 + (errno & 0x7f));
             }
         }

@@ -11,7 +11,7 @@
 
 use ghost::{modes, supervisor};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -29,24 +29,6 @@ struct Cli {
     /// Tee the raw event stream to a .ghost session file.
     #[arg(long, global = true)]
     record: Option<String>,
-
-    /// Run headless (no TUI); pair with --record / --duration.
-    #[arg(long, global = true)]
-    no_tui: bool,
-
-    /// Initial TUI aesthetic (toggle at runtime with `v`).
-    #[arg(long, global = true, value_enum, default_value_t = Theme::Dense)]
-    theme: Theme,
-
-    /// /proc poll cadence in milliseconds.
-    #[arg(long, global = true, default_value_t = 500)]
-    interval: u64,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum Theme {
-    Dense,
-    Minimal,
 }
 
 #[derive(Subcommand, Debug)]

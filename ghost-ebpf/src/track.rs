@@ -3,6 +3,19 @@
 //! Tracepoint offsets:
 //!   sched/sched_process_fork: parent_pid @ 12, child_pid @ 20
 //!   sched/sched_process_exit: pid @ 24
+//!
+//! Note on `sched_process_exit`: the `pid` field at offset 24 is the
+//! kernel's `task_struct->pid`, i.e. the TID — one event fires per
+//! thread of a multithreaded process. Because fork propagation inserts
+//! every clone-child into PID_SET, each thread exit correctly removes
+//! its own entry. The ExitRecord's `pid` is therefore a TID too, and
+//! consumer's `rec.pid == st.pid` check only trips when the thread
+//! whose TID == the user-supplied PID exits — which, for the usual
+//! `ghost <pid>` where <pid> is a TGID (process ID / main-thread TID),
+//! coincides with the thread-group leader's exit. For the inverse
+//! (user attached to a non-leader TID, or a cold-launched child whose
+//! main thread exits via `exit_group` while workers still run), fall
+//! back on the /proc poller's own `target_gone` edge in supervisor.rs.
 
 use aya_ebpf::{macros::tracepoint, programs::TracePointContext};
 use ghost_common::{ExitRecord, TrackInfo};
