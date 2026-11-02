@@ -1,0 +1,43 @@
+# TODO: first-run lenient config. If `cargo deny check` surfaces findings
+# that are blocking in CI, tighten the warn → deny severities below once
+# each is resolved. See RFC 0008 (docs/rfc/0008-dependency-release-audit.md).
+
+[advisories]
+# yanked crates and unmaintained advisories warn on first pass so a stale
+# transitive dep can't block the gate from landing; tighten to "deny" after
+# we've swept the first batch.
+yanked = "warn"
+ignore = []
+
+[licenses]
+# Permissive allow-list — matches the licence posture of ghost's own
+# Cargo.toml (MIT OR Apache-2.0). Anything outside this list fails CI.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "Zlib",
+    "0BSD",
+    "MPL-2.0",
+    "OpenSSL",
+]
+confidence-threshold = 0.8
+
+[bans]
+# multiple-versions warns rather than denies so the first CI run can
+# land without triggering on a transitive dep diamond we haven't
+# bothered to flatten yet.
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

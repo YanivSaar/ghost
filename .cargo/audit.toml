@@ -1,0 +1,20 @@
+# cargo-audit configuration. See RFC 0008 (docs/rfc/0008-dependency-release-audit.md).
+#
+# TODO: the three advisories below surfaced on the first-run baseline and are
+# acknowledged here so the CI gate can land. Each is transitive through aya's
+# dependency tree. Follow-up: track aya + its deps upstream and remove entries
+# from this ignore list once a release lands that pulls in `paste` → maintained
+# fork and `lru` >= 0.13 (patched for RUSTSEC-2026-0002 + 0253).
+
+[advisories]
+ignore = [
+    # Transitive via aya-ebpf-macros → paste. Crate is unmaintained but no
+    # security impact; proc-macro-only usage.
+    "RUSTSEC-2024-0436",
+    # Transitive via aya → lru 0.12.5. Unsound IterMut (stacked borrows).
+    # Not reachable from ghost's call paths.
+    "RUSTSEC-2026-0002",
+    # Transitive via aya → lru 0.12.5. Panic-safety UAF in LruCache::pop().
+    # Not reachable from ghost's call paths.
+    "RUSTSEC-2026-0253",
+]

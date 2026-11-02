@@ -17,10 +17,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain (pinned nightly)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-10-15
           components: rustfmt, clippy, rust-src
+
+      # aya-build (ghost/build.rs) hardcodes `rustup run nightly` to
+      # compile ghost-ebpf. Install the plain `nightly` alias in addition
+      # to the pinned toolchain so that invocation resolves. The pinned
+      # toolchain stays active for host code; aya-build only uses the
+      # alias to find a BPF-capable compiler.
+      - name: Install floating nightly for aya-build
+        run: rustup toolchain install nightly --component rust-src
           # bpfel-unknown-none has no prebuilt rust-std; ghost's build.rs
           # (via aya_build) uses -Zbuild-std with rust-src instead.
 
@@ -64,6 +73,24 @@ jobs:
       # ghost's build.rs instead, and clippy only the host crates.
       - name: clippy
         run: cargo clippy -p ghost -p ghost-common --all-targets -- -D warnings
+
+      # Supply-chain gates. cargo-audit fails on any RUSTSEC advisory;
+      # cargo-deny enforces the licence allow-list in deny.toml and
+      # catches multiple-versions / banned crates.
+      - name: Install cargo-audit
+        # 0.21 cannot parse newer RUSTSEC entries that carry CVSS 4.0
+        # vectors (e.g. RUSTSEC-2025-0138). 0.22+ supports CVSS 4.0.
+        run: cargo install cargo-audit --locked --version ^0.22
+      - name: cargo audit
+        run: cargo audit --deny warnings
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version ^0.16
+      - name: cargo deny check
+        # Advisories are already handled by cargo-audit above; skipping
+        # `advisories` here avoids double-parsing the RUSTSEC DB (and
+        # avoids cargo-deny 0.16's CVSS 4.0 parse error on newer entries).
+        run: cargo deny check licenses bans sources
 
       - name: build
         run: cargo build -p ghost --release --verbose
