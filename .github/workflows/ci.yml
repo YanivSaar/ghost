@@ -66,6 +66,19 @@ jobs:
       - name: clippy
         run: cargo clippy -p ghost -p ghost-common --all-targets -- -D warnings
 
+      # Supply-chain gates. cargo-audit fails on any RUSTSEC advisory;
+      # cargo-deny enforces the licence allow-list in deny.toml and
+      # catches multiple-versions / banned crates.
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version ^0.21
+      - name: cargo audit
+        run: cargo audit --deny warnings
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked --version ^0.16
+      - name: cargo deny check
+        run: cargo deny check
+
       - name: build
         run: cargo build -p ghost --release --verbose
 
