@@ -8,3 +8,18 @@ pub mod lock;
 pub mod mode;
 pub mod snap;
 pub mod watch;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn every_lens_module_is_reachable() {
+        let _ = (
+            core::any::type_name::<mode::ModeId>(),
+            core::any::type_name::<analyze::Format>(),
+            core::any::type_name::<analyze::Args>(),
+        );
+        // Reference symbols from each lens so the mod is covered.
+        let _: fn(u32) -> anyhow::Result<()> = snap::run;
+    }
+}

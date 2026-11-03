@@ -5,3 +5,13 @@ pub mod app;
 pub mod screens;
 pub mod syscalls;
 pub mod widgets;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn tui_submodules_resolve() {
+        let _ = core::any::type_name::<app::Tui>();
+        let _: fn(u32) -> &'static str = syscalls::syscall_name;
+    }
+}

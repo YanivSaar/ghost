@@ -81,3 +81,75 @@ impl SessionReader {
         Ok(Some((kind, ts_delta, body)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::{format::SessionMeta, writer::SessionWriter};
+    use proptest::prelude::*;
+
+    fn tmp(name: &str) -> String {
+        format!("{}/{}", std::env::temp_dir().display(), name)
+    }
+
+    #[test]
+    fn malformed_meta_length_rejected() {
+        // Craft a header with meta_len = MAX_META_LEN + 1 → must error.
+        let path = tmp("ghost_rdr_bad_meta.ghost");
+        let mut buf = Vec::new();
+        buf.extend_from_slice(MAGIC);
+        buf.extend_from_slice(&VERSION.to_le_bytes());
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        buf.extend_from_slice(&((MAX_META_LEN + 1) as u64).to_le_bytes());
+        std::fs::write(&path, &buf).unwrap();
+        assert!(SessionReader::open(&path).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn malformed_frame_length_rejected_on_read() {
+        // Valid header + one frame with clen = MAX_FRAME_LEN + 1.
+        let path = tmp("ghost_rdr_bad_frame.ghost");
+        let meta = SessionMeta::new(1, "x", "watch");
+        {
+            let mut w = SessionWriter::open(&path, &meta).unwrap();
+            w.flush().unwrap();
+        }
+        // Append a fake frame header pointing at a huge body.
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        f.write_all(&[1u8]).unwrap(); // kind
+        f.write_all(&0u32.to_le_bytes()).unwrap(); // ts_delta
+        f.write_all(&((MAX_FRAME_LEN + 1) as u32).to_le_bytes()).unwrap();
+        drop(f);
+        let mut r = SessionReader::open(&path).unwrap();
+        assert!(r.next_frame().is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+        #[test]
+        fn round_trip_random_frames(frames in proptest::collection::vec(
+            (0u8..=10, proptest::collection::vec(any::<u8>(), 0..256)),
+            0..32)) {
+            let path = tmp("ghost_rdr_rt.ghost");
+            let meta = SessionMeta::new(1, "rt", "watch");
+            {
+                let mut w = SessionWriter::open(&path, &meta).unwrap();
+                for (k, body) in &frames {
+                    w.write_frame(*k, body).unwrap();
+                }
+                w.flush().unwrap();
+            }
+            let mut r = SessionReader::open(&path).unwrap();
+            for (expect_k, expect_body) in &frames {
+                let (k, _d, body) = r.next_frame().unwrap().expect("frame");
+                prop_assert_eq!(k, *expect_k);
+                prop_assert_eq!(body, expect_body.clone());
+            }
+            prop_assert!(r.next_frame().unwrap().is_none());
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}

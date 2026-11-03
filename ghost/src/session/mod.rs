@@ -3,3 +3,14 @@
 pub mod format;
 pub mod reader;
 pub mod writer;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn mod_paths_resolve() {
+        let _ = core::any::type_name::<format::SessionMeta>();
+        let _ = core::any::type_name::<reader::SessionReader>();
+        let _ = core::any::type_name::<writer::SessionWriter>();
+    }
+}
