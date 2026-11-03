@@ -17,9 +17,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust toolchain (from rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@nightly
+      - name: Install Rust toolchain (pinned nightly)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-10-15
           components: rustfmt, clippy, rust-src
           # bpfel-unknown-none has no prebuilt rust-std; ghost's build.rs
           # (via aya_build) uses -Zbuild-std with rust-src instead.

@@ -1,4 +1,4 @@
 # aya compiles BPF from Rust and needs nightly + rust-src for the bpf target.
 [toolchain]
-channel = "nightly"
+channel = "nightly-2026-10-15"
 components = ["rust-src", "clippy", "rustfmt"]
