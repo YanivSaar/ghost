@@ -87,7 +87,10 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked --version ^0.16
       - name: cargo deny check
-        run: cargo deny check
+        # Advisories are already handled by cargo-audit above; skipping
+        # `advisories` here avoids double-parsing the RUSTSEC DB (and
+        # avoids cargo-deny 0.16's CVSS 4.0 parse error on newer entries).
+        run: cargo deny check licenses bans sources
 
       - name: build
         run: cargo build -p ghost --release --verbose
