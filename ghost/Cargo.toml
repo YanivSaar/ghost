@@ -33,6 +33,16 @@ signal-hook = { version = "0.3", default-features = false }
 [dev-dependencies]
 # Property-based testing for session round-trip + consumer dispatch invariants.
 proptest = { version = "1", default-features = false, features = ["std"] }
+# Microbenchmarks for the perf-audit baseline (RFC 0004).
+criterion = { version = "0.5", default-features = false, features = ["plotters", "cargo_bench_support"] }
+
+[[bench]]
+name = "analyze_tick"
+harness = false
+
+[[bench]]
+name = "proc_snapshot"
+harness = false
 
 [build-dependencies]
 # Compiles ghost-ebpf to BPF and emits the object for embedding.
