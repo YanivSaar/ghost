@@ -150,3 +150,47 @@ fn probe_mouse(stdout: &mut Stdout) -> bool {
         // Re-check: if disable worked, enable is supported.
         && execute!(stdout, EnableMouseCapture).is_ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::state::{ActiveMode, AppState};
+    use crate::tui::screens;
+    use ratatui::{backend::TestBackend, Terminal};
+
+    #[test]
+    fn screen_dispatch_renders_every_mode_without_panic() {
+        // Tui itself owns real stdout + raw mode, which TestBackend can't
+        // model. The valuable coverage here is the screen-dispatch arm
+        // we call in Tui::run — exercise the same decisions directly.
+        let backend = TestBackend::new(80, 24);
+        let mut term = Terminal::new(backend).unwrap();
+        let modes = [
+            ActiveMode::Watch,
+            ActiveMode::Snap,
+            ActiveMode::Lock,
+            ActiveMode::Catch,
+            ActiveMode::Cold,
+            ActiveMode::Jitter,
+        ];
+        for m in modes {
+            for dense in [true, false] {
+                let mut st = AppState::new(1234, "test".into());
+                st.mode = m;
+                let mut ts = ratatui::widgets::TableState::default();
+                term.draw(|f| match (st.mode, dense) {
+                    (ActiveMode::Lock, true) => screens::lock::render_dense(f, &st, &mut ts),
+                    (ActiveMode::Lock, false) => screens::lock::render_minimal(f, &st, &mut ts),
+                    (ActiveMode::Catch, true) => screens::catch::render_dense(f, &st, &mut ts),
+                    (ActiveMode::Catch, false) => screens::catch::render_minimal(f, &st, &mut ts),
+                    (ActiveMode::Cold, true) => screens::cold::render_dense(f, &st, &mut ts),
+                    (ActiveMode::Cold, false) => screens::cold::render_minimal(f, &st, &mut ts),
+                    (ActiveMode::Jitter, true) => screens::jitter::render_dense(f, &st, &mut ts),
+                    (ActiveMode::Jitter, false) => screens::jitter::render_minimal(f, &st, &mut ts),
+                    (_, true) => screens::overview::render_dense(f, &st, &mut ts),
+                    (_, false) => screens::overview::render_minimal(f, &st, &mut ts),
+                })
+                .unwrap_or_else(|e| panic!("render failed for {m:?} dense={dense}: {e}"));
+            }
+        }
+    }
+}

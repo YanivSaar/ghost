@@ -207,3 +207,64 @@ fn seccomp_name(n: u8) -> &'static str {
         _ => "disabled",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_names_cover_known_codes() {
+        assert_eq!(state_name('R'), "running");
+        assert_eq!(state_name('S'), "sleeping");
+        assert_eq!(state_name('D'), "disk-wait");
+        assert_eq!(state_name('Z'), "zombie");
+        assert_eq!(state_name('T'), "stopped");
+        assert_eq!(state_name('t'), "traced");
+        assert_eq!(state_name('X'), "dead");
+        assert_eq!(state_name('I'), "idle");
+        assert_eq!(state_name('?'), "?");
+    }
+
+    #[test]
+    fn fmt_kb_tiered() {
+        assert_eq!(fmt_kb(0), "0 B");
+        assert_eq!(fmt_kb(512), "512 KiB");
+        assert!(fmt_kb(2048).ends_with("MiB"));
+        assert!(fmt_kb(2 * 1024 * 1024).ends_with("GiB"));
+    }
+
+    #[test]
+    fn fmt_bytes_tiered() {
+        assert!(fmt_bytes(100).ends_with("B"));
+        assert!(fmt_bytes(2 * 1024).ends_with("KiB"));
+        assert!(fmt_bytes(2 * 1024 * 1024).ends_with("MiB"));
+        assert!(fmt_bytes(2u64 * 1024 * 1024 * 1024).ends_with("GiB"));
+    }
+
+    #[test]
+    fn fmt_secs_has_three_decimals_and_s_suffix() {
+        let s = fmt_secs(1.23456);
+        assert!(s.ends_with("s"));
+        assert!(s.contains("1.23"));
+    }
+
+    #[test]
+    fn seccomp_names() {
+        assert_eq!(seccomp_name(1), "strict");
+        assert_eq!(seccomp_name(2), "filter");
+        assert_eq!(seccomp_name(0), "disabled");
+        assert_eq!(seccomp_name(99), "disabled");
+    }
+
+    #[test]
+    fn snap_run_against_self_succeeds() {
+        // Smoke-test the full /proc read path against our own pid.
+        // Any environment with /proc should satisfy this; the function
+        // prints to stdout and returns Ok.
+        let pid = std::process::id();
+        assert!(
+            run(pid).is_ok(),
+            "snap on self must succeed on a /proc-backed system"
+        );
+    }
+}

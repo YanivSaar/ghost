@@ -313,3 +313,36 @@ impl AttachResult {
         .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attach_result_default_has_no_errors() {
+        let r = AttachResult::default();
+        assert!(r.errors().is_empty());
+    }
+
+    #[test]
+    fn attach_result_errors_reports_populated_fields() {
+        let mut r = AttachResult::default();
+        r.sys_enter = Some("sys_enter: load failed: EACCES".into());
+        r.sched_switch = Some("sched_switch: attach failed".into());
+        let errs = r.errors();
+        assert_eq!(errs.len(), 2);
+        assert!(errs.iter().any(|e| e.contains("sys_enter")));
+        assert!(errs.iter().any(|e| e.contains("sched_switch")));
+    }
+
+    #[test]
+    fn ghost_ebpf_bytes_embedded() {
+        // The build.rs step bakes a non-empty BPF object into the binary.
+        // We don't try to load it (needs CAP_BPF); we just assert the
+        // embed is non-empty so a build-pipeline regression shows up here.
+        assert!(
+            !GHOST_EBPF_BYTES.is_empty(),
+            "embedded BPF object should be non-empty"
+        );
+    }
+}

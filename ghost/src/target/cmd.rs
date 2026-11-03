@@ -90,3 +90,51 @@ impl CmdHandle {
         Ok(code)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_argv_errors() {
+        let r = CmdHandle::spawn_stopped(&[]);
+        assert!(r.is_err(), "empty argv must error");
+    }
+
+    #[test]
+    #[should_panic]
+    fn argv_with_nul_byte_panics_on_cstring() {
+        // CString::new rejects interior NULs; the current code does an
+        // `.unwrap()` which panics. Locking down current behaviour so a
+        // change to graceful handling is visible in the diff.
+        let argv = vec!["bad\0arg".to_string()];
+        let _ = CmdHandle::spawn_stopped(&argv);
+    }
+
+    #[test]
+    fn spawn_and_wait_true_exits_zero() {
+        // /bin/true exists on every POSIX system; it exits with 0.
+        if !std::path::Path::new("/bin/true").exists() {
+            // Non-POSIX test env — skip rather than fail.
+            return;
+        }
+        let h = CmdHandle::spawn_stopped(&["/bin/true".to_string()]).expect("spawn /bin/true");
+        h.resume().expect("resume");
+        let code = h.wait().expect("wait");
+        assert_eq!(code, 0, "/bin/true should exit 0");
+    }
+
+    #[test]
+    fn spawn_nonexistent_exe_exits_nonzero() {
+        // The fork + SIGSTOP handshake succeeds; execvp fails inside the
+        // child and the child's _exit(127 + errno) returns nonzero via wait.
+        let h = CmdHandle::spawn_stopped(&["/no/such/binary/for/ghost/test".to_string()])
+            .expect("spawn (fork+stop) still succeeds");
+        h.resume().expect("resume");
+        let code = h.wait().expect("wait");
+        assert_ne!(
+            code, 0,
+            "execvp of a missing binary must yield nonzero exit"
+        );
+    }
+}
