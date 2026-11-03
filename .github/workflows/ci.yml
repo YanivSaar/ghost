@@ -78,7 +78,9 @@ jobs:
       # cargo-deny enforces the licence allow-list in deny.toml and
       # catches multiple-versions / banned crates.
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked --version ^0.21
+        # 0.21 cannot parse newer RUSTSEC entries that carry CVSS 4.0
+        # vectors (e.g. RUSTSEC-2025-0138). 0.22+ supports CVSS 4.0.
+        run: cargo install cargo-audit --locked --version ^0.22
       - name: cargo audit
         run: cargo audit --deny warnings
 
