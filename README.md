@@ -14,6 +14,20 @@ format for record / replay / diff.
 
 ---
 
+## Supported platforms
+
+| | |
+|---|---|
+| **Rust** | nightly pinned to `nightly-2026-10-15` (`rust-toolchain.toml`); bumped monthly |
+| **MSRV** | rustc 1.86 (bundled with the pinned nightly) |
+| **Linux kernels (targeted)** | 5.10 • 5.15 • 6.1 • 6.6 • 6.12 LTS — matrix formally verified in RFC 0006 |
+| **Architectures** | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` |
+| **Capabilities** | `CAP_BPF` + `CAP_PERFMON` (kernel ≥ 5.8) OR root. `/proc` fallback runs unprivileged with reduced coverage. |
+
+The analyzer pipeline, release automation, and supply-chain gates are tracked in RFCs under [`docs/rfc/`](docs/rfc/).
+
+---
+
 ## Highlights
 
 - **Six lenses, one binary.** `snap`, `watch`, `lock`, `catch`, `cold`, `jitter`.
