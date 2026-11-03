@@ -22,6 +22,14 @@ jobs:
         with:
           toolchain: nightly-2026-10-15
           components: rustfmt, clippy, rust-src
+
+      # aya-build (ghost/build.rs) hardcodes `rustup run nightly` to
+      # compile ghost-ebpf. Install the plain `nightly` alias in addition
+      # to the pinned toolchain so that invocation resolves. The pinned
+      # toolchain stays active for host code; aya-build only uses the
+      # alias to find a BPF-capable compiler.
+      - name: Install floating nightly for aya-build
+        run: rustup toolchain install nightly --component rust-src
           # bpfel-unknown-none has no prebuilt rust-std; ghost's build.rs
           # (via aya_build) uses -Zbuild-std with rust-src instead.
 
