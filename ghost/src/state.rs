@@ -4,6 +4,7 @@
 //! The render thread takes a brief read lock each frame; writer threads
 //! hold the write lock only long enough to update aggregates.
 
+use crate::analyze::AnalyzerState;
 use crate::proc::ProcSnapshot;
 use ghost_common::{ColdStat, IrqStat, LockStat, SyscallKey, SyscallStat};
 use std::collections::VecDeque;
@@ -35,6 +36,10 @@ pub struct AppState {
     pub jitter: JitterLensState,
     pub snap: Option<ProcSnapshot>,
 
+    /// Analyzer scenario state (RFC 0001). Populated once per /proc tick
+    /// by the engine; the TUI's analyze screen reads this snapshot.
+    pub analyze: AnalyzerState,
+
     /// Set to true when the target process exits.
     pub target_gone: bool,
 }
@@ -47,6 +52,7 @@ pub enum ActiveMode {
     Catch,
     Cold,
     Jitter,
+    Analyze,
 }
 
 /// Live state for the `jitter` lens. Both tables are sorted by total_ns
@@ -154,6 +160,7 @@ impl AppState {
             cold: ColdLensState::default(),
             jitter: JitterLensState::default(),
             snap: None,
+            analyze: AnalyzerState::default(),
             target_gone: false,
         }
     }

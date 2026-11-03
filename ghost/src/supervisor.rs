@@ -28,6 +28,7 @@ fn mode_name(m: ActiveMode) -> &'static str {
         ActiveMode::Catch => "catch",
         ActiveMode::Cold => "cold",
         ActiveMode::Jitter => "jitter",
+        ActiveMode::Analyze => "analyze",
     }
 }
 
@@ -552,6 +553,10 @@ fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
 }
 
 fn proc_poller(target: PidTarget, state: Arc<RwLock<AppState>>, stop: Arc<AtomicBool>) {
+    // Each supervisor gets its own analyzer engine; the config loads
+    // once (silent-fallback to defaults on every error).
+    let cfg = crate::analyze::config::load_or_default(None);
+    let mut engine = crate::analyze::engine::AnalyzerEngine::new(cfg);
     while !stop.load(Ordering::Relaxed) {
         if !target.is_alive() {
             state.write().unwrap().target_gone = true;
@@ -584,6 +589,12 @@ fn proc_poller(target: PidTarget, state: Arc<RwLock<AppState>>, stop: Arc<Atomic
                     st.watch.involuntary_ctx = snap.status.nonvoluntary_ctxt_switches;
                 }
                 st.snap = Some(snap);
+                // Reflect any TUI-driven mode toggle back into the engine.
+                engine.set_mode(st.analyze.mode);
+                // Run analyzer against this tick's state.
+                let mut analyze_out = std::mem::take(&mut st.analyze);
+                engine.tick(&st, &mut analyze_out);
+                st.analyze = analyze_out;
             }
             Err(_) => {
                 state.write().unwrap().target_gone = true;

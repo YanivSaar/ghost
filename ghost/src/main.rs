@@ -61,6 +61,30 @@ enum Cmd {
     },
     /// Compare two recorded sessions.
     Diff { a: String, b: String },
+    /// Scenario analyzer (RFC 0001): offline over a session file, or
+    /// one-shot live via --pid + --duration.
+    Analyze {
+        /// Session file to analyze (positional). Omit for live mode.
+        file: Option<String>,
+        /// Live analyze: attach briefly to this pid, dump diagnoses, exit.
+        #[arg(long)]
+        pid: Option<u32>,
+        /// How long to collect for in live mode (e.g. 10s, 500ms).
+        #[arg(long, default_value = "10s")]
+        duration: String,
+        /// Emit JSON array (mutually exclusive with --jsonl).
+        #[arg(long)]
+        json: bool,
+        /// Emit JSON Lines (mutually exclusive with --json).
+        #[arg(long)]
+        jsonl: bool,
+        /// quiet | noisy
+        #[arg(long, default_value = "quiet")]
+        mode: String,
+        /// Override config path. Omit for XDG default.
+        #[arg(long)]
+        config: Option<String>,
+    },
 }
 
 /// Parse a short duration like "10ms", "500us", "1s", "250000ns" into nanoseconds.
@@ -129,6 +153,39 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Jitter { pid }) => supervisor::run_jitter(pid, cli.record),
         Some(Cmd::Replay { file, seek }) => supervisor::run_replay(file, seek),
         Some(Cmd::Diff { a, b }) => supervisor::run_diff(a, b),
+        Some(Cmd::Analyze {
+            file,
+            pid,
+            duration,
+            json,
+            jsonl,
+            mode,
+            config,
+        }) => {
+            if json && jsonl {
+                eprintln!("ghost: --json and --jsonl are mutually exclusive");
+                std::process::exit(1);
+            }
+            let fmt = if json {
+                ghost::modes::analyze::Format::Json
+            } else if jsonl {
+                ghost::modes::analyze::Format::Jsonl
+            } else {
+                ghost::modes::analyze::Format::Plain
+            };
+            let an_mode = match mode.as_str() {
+                "noisy" => ghost::analyze::Mode::Noisy,
+                _ => ghost::analyze::Mode::Quiet,
+            };
+            ghost::modes::analyze::run(ghost::modes::analyze::Args {
+                file,
+                pid,
+                duration,
+                format: fmt,
+                mode: an_mode,
+                config,
+            })
+        }
     }
 }
 

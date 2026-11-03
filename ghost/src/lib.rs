@@ -16,6 +16,7 @@
 // `x.checked_div(y).unwrap_or(0)` when the guard already conveys intent.
 #![allow(clippy::manual_checked_ops)]
 
+pub mod analyze;
 pub mod caps;
 pub mod ebpf;
 pub mod modes;

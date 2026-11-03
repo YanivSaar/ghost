@@ -25,6 +25,7 @@ crossterm = { version = "0.28", features = ["event-stream"] }
 lz4_flex = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = { version = "0.8", default-features = false, features = ["parse"] }
 
 # Async-signal-safe SIGINT/SIGTERM → AtomicBool bridge for graceful shutdown.
 signal-hook = { version = "0.3", default-features = false }

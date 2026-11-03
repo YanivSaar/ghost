@@ -22,7 +22,7 @@ use ratatui::{backend::CrosstermBackend, widgets::TableState, Terminal};
 
 use crate::{
     state::{ActiveMode, AppState},
-    tui::screens::{catch, cold, jitter, lock, overview},
+    tui::screens::{analyze, catch, cold, jitter, lock, overview},
 };
 
 pub struct Tui {
@@ -86,6 +86,8 @@ impl Tui {
                     (ActiveMode::Cold, false) => cold::render_minimal(f, &st, ts),
                     (ActiveMode::Jitter, true) => jitter::render_dense(f, &st, ts),
                     (ActiveMode::Jitter, false) => jitter::render_minimal(f, &st, ts),
+                    (ActiveMode::Analyze, true) => analyze::render_dense(f, &st, ts),
+                    (ActiveMode::Analyze, false) => analyze::render_minimal(f, &st, ts),
                     (_, true) => overview::render_dense(f, &st, ts),
                     (_, false) => overview::render_minimal(f, &st, ts),
                 })?;
@@ -98,12 +100,23 @@ impl Tui {
             // Poll input (30 fps = ~33ms).
             if event::poll(Duration::from_millis(33))? {
                 match event::read()? {
-                    Event::Key(key) => {
-                        if self.handle_key(key) {
+                    Event::Key(key) => match self.handle_key(key) {
+                        KeyAction::Quit => {
                             stop.store(true, std::sync::atomic::Ordering::Relaxed);
                             break;
                         }
-                    }
+                        KeyAction::GotoAnalyze => {
+                            state.write().unwrap().mode = ActiveMode::Analyze;
+                        }
+                        KeyAction::ToggleAnalyzeMode => {
+                            let mut s = state.write().unwrap();
+                            s.analyze.mode = match s.analyze.mode {
+                                crate::analyze::Mode::Quiet => crate::analyze::Mode::Noisy,
+                                crate::analyze::Mode::Noisy => crate::analyze::Mode::Quiet,
+                            };
+                        }
+                        KeyAction::None => {}
+                    },
                     Event::Resize(_, _) => {
                         self.terminal.autoresize()?;
                     }
@@ -114,19 +127,21 @@ impl Tui {
         Ok(())
     }
 
-    /// Returns true if the user requested quit.
-    fn handle_key(&mut self, key: KeyEvent) -> bool {
+    fn handle_key(&mut self, key: KeyEvent) -> KeyAction {
         match (key.code, key.modifiers) {
-            (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => true,
-
+            (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                KeyAction::Quit
+            }
+            (KeyCode::Char('a'), _) => KeyAction::GotoAnalyze,
+            (KeyCode::Char('n'), _) => KeyAction::ToggleAnalyzeMode,
             (KeyCode::Char('v'), _) => {
                 self.dense = !self.dense;
-                false
+                KeyAction::None
             }
             (KeyCode::Down, _) => {
                 let i = self.table_state.selected().map(|i| i + 1).unwrap_or(0);
                 self.table_state.select(Some(i));
-                false
+                KeyAction::None
             }
             (KeyCode::Up, _) => {
                 let i = self
@@ -135,11 +150,18 @@ impl Tui {
                     .map(|i| i.saturating_sub(1))
                     .unwrap_or(0);
                 self.table_state.select(Some(i));
-                false
+                KeyAction::None
             }
-            _ => false,
+            _ => KeyAction::None,
         }
     }
+}
+
+enum KeyAction {
+    None,
+    Quit,
+    GotoAnalyze,
+    ToggleAnalyzeMode,
 }
 
 impl Drop for Tui {
@@ -184,6 +206,7 @@ mod tests {
             ActiveMode::Catch,
             ActiveMode::Cold,
             ActiveMode::Jitter,
+            ActiveMode::Analyze,
         ];
         for m in modes {
             for dense in [true, false] {
@@ -199,6 +222,8 @@ mod tests {
                     (ActiveMode::Cold, false) => screens::cold::render_minimal(f, &st, &mut ts),
                     (ActiveMode::Jitter, true) => screens::jitter::render_dense(f, &st, &mut ts),
                     (ActiveMode::Jitter, false) => screens::jitter::render_minimal(f, &st, &mut ts),
+                    (ActiveMode::Analyze, true) => screens::analyze::render_dense(f, &st, &mut ts),
+                    (ActiveMode::Analyze, false) => screens::analyze::render_minimal(f, &st, &mut ts),
                     (_, true) => screens::overview::render_dense(f, &st, &mut ts),
                     (_, false) => screens::overview::render_minimal(f, &st, &mut ts),
                 })
