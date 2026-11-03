@@ -24,6 +24,10 @@ pub struct Stat {
     pub last_cpu: u32,
     pub priority: i32,
     pub nice: i32,
+    /// Major fault counts (hard page faults — I/O required).
+    pub majflt: u64,
+    pub cmajflt: u64,
+    pub minflt: u64,
 }
 
 impl Stat {
@@ -60,6 +64,9 @@ pub(crate) fn parse(raw: &str) -> Result<Stat> {
     let ppid: u32 = f(1, "ppid")?.parse().context("ppid")?;
     let pgrp: u32 = f(2, "pgrp")?.parse().context("pgrp")?;
     let session: u32 = f(3, "session")?.parse().context("session")?;
+    let minflt: u64 = f(7, "minflt")?.parse().unwrap_or(0);
+    let majflt: u64 = f(9, "majflt")?.parse().unwrap_or(0);
+    let cmajflt: u64 = f(10, "cmajflt")?.parse().unwrap_or(0);
     let utime_ticks: u64 = f(11, "utime")?.parse().context("utime")?;
     let stime_ticks: u64 = f(12, "stime")?.parse().context("stime")?;
     let num_threads: u32 = f(17, "num_threads")?.parse().context("num_threads")?;
@@ -86,6 +93,9 @@ pub(crate) fn parse(raw: &str) -> Result<Stat> {
         last_cpu,
         priority,
         nice,
+        majflt,
+        cmajflt,
+        minflt,
     })
 }
 pub fn ticks_to_secs(ticks: u64) -> f64 {

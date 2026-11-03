@@ -24,6 +24,14 @@ pub struct ProcSnapshot {
     pub cmdline: String,
     pub exe: String,
     pub cwd: String,
+    /// /proc/<pid>/oom_score as an unsigned integer; 0 if the file is
+    /// missing (unprivileged container, kernel too old, …).
+    pub oom_score: u32,
+    /// /proc/<pid>/schedstat → (run_ns, wait_ns, pcount); all zero when
+    /// CONFIG_SCHEDSTATS is off or the file is missing.
+    pub sched_run_ns: u64,
+    pub sched_wait_ns: u64,
+    pub sched_pcount: u64,
 }
 
 impl ProcSnapshot {
@@ -39,6 +47,8 @@ impl ProcSnapshot {
         let cmdline = read_cmdline(pid);
         let exe = read_link(pid, "exe");
         let cwd = read_link(pid, "cwd");
+        let oom_score = read_oom_score(pid);
+        let (sched_run_ns, sched_wait_ns, sched_pcount) = read_schedstat(pid);
 
         Ok(ProcSnapshot {
             stat,
@@ -52,8 +62,33 @@ impl ProcSnapshot {
             cmdline,
             exe,
             cwd,
+            oom_score,
+            sched_run_ns,
+            sched_wait_ns,
+            sched_pcount,
         })
     }
+}
+
+/// /proc/<pid>/oom_score as a u32. Returns 0 on any error so the field
+/// is always safe to read; a real score of 0 is possible and benign.
+fn read_oom_score(pid: u32) -> u32 {
+    std::fs::read_to_string(format!("/proc/{pid}/oom_score"))
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
+/// /proc/<pid>/schedstat: three whitespace-separated integers:
+///   run_ns  wait_ns  pcount
+/// Zeros when CONFIG_SCHEDSTATS=off or the file is missing.
+fn read_schedstat(pid: u32) -> (u64, u64, u64) {
+    let text = std::fs::read_to_string(format!("/proc/{pid}/schedstat")).unwrap_or_default();
+    let mut it = text.split_whitespace();
+    let a = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let b = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    let c = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+    (a, b, c)
 }
 
 fn read_cmdline(pid: u32) -> String {

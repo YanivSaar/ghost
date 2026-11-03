@@ -73,6 +73,9 @@ pub struct AnalyzerState {
     pub config_source: ConfigSource,
     pub last_status_line: Option<String>,
     pub tick: u64,
+    /// Session-only confidence floor applied globally; `f` key cycles.
+    /// None = no additional floor beyond per-rule config.
+    pub global_floor: Option<Confidence>,
 }
 
 impl Default for Mode {

@@ -14,9 +14,11 @@ use crate::analyze::{
 use crate::state::AppState;
 use std::collections::VecDeque;
 
+pub mod extra;
+
 // ---- syscall-number constants (x86_64 ABI) ----
 // Only the handful we read directly below. Full table lives in tui::syscalls.
-mod nr {
+pub(crate) mod nr {
     pub const READ: u32 = 0;
     pub const WRITE: u32 = 1;
     pub const POLL: u32 = 7;

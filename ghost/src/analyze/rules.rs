@@ -24,7 +24,7 @@ pub trait Rule: Send + Sync {
 /// engine sorts after collection.
 pub fn all_rules() -> &'static [&'static dyn Rule] {
     use crate::analyze::scenarios::*;
-    static RULES: &[&'static (dyn Rule + 'static)] = &[
+    static BASE: &[&'static (dyn Rule + 'static)] = &[
         &CPU_BOUND_USER,
         &CPU_BOUND_KERNEL,
         &IO_BOUND,
@@ -38,15 +38,21 @@ pub fn all_rules() -> &'static [&'static dyn Rule] {
         &MMAP_THRASH,
         &ZOMBIE_REAP_DELAY,
     ];
-    RULES
+    static ALL: std::sync::OnceLock<Vec<&'static (dyn Rule + 'static)>> = std::sync::OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut v: Vec<&'static (dyn Rule + 'static)> = BASE.to_vec();
+        v.extend_from_slice(crate::analyze::scenarios::extra::registry());
+        v
+    })
+    .as_slice()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn registry_lists_twelve_rules() {
-        assert_eq!(all_rules().len(), 12);
+    fn registry_lists_fifty_rules() {
+        assert_eq!(all_rules().len(), 12 + 38);
     }
     #[test]
     fn ids_are_unique() {

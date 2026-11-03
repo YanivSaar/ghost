@@ -26,9 +26,18 @@ pub struct TickSnapshot {
     pub lock_total_waits: u64,
     pub cpu_pct: f32,
     pub per_syscall_counts: HashMap<u32, u64>,
+    pub per_syscall_total_ns: HashMap<u32, u64>,
+    pub per_syscall_max_ns: HashMap<u32, u64>,
     pub forks: u64,
     pub exits: u64,
     pub cold_entries: usize,
+    // RFC 0002 additions sampled from ProcSnapshot.
+    pub rss_kb: u64,
+    pub majflt: u64,
+    pub oom_score: u32,
+    pub sched_run_ns: u64,
+    pub sched_wait_ns: u64,
+    pub lock_max_queue: u32,
 }
 
 /// Per-rule state across ticks: active diagnosis identity + first-seen
@@ -51,6 +60,7 @@ pub struct AnalyzerEngine {
     rule_state: HashMap<&'static str, RuleRuntime>,
     history_entries: VecDeque<HistoryEntry>,
     last_current: Vec<Diagnosis>,
+    pub global_floor: Option<crate::analyze::Confidence>,
 }
 
 impl AnalyzerEngine {
@@ -64,6 +74,7 @@ impl AnalyzerEngine {
             rule_state: HashMap::new(),
             history_entries: VecDeque::with_capacity(HISTORY_TICKS),
             last_current: Vec::new(),
+            global_floor: None,
         }
     }
 
@@ -98,8 +109,14 @@ impl AnalyzerEngine {
                 continue;
             };
 
-            // Apply confidence floor.
-            if let Some(floor) = th.confidence_floor() {
+            // Apply confidence floor (per-rule config OR session global).
+            let effective_floor = match (th.confidence_floor(), self.global_floor) {
+                (Some(a), Some(b)) => Some(a.max(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            };
+            if let Some(floor) = effective_floor {
                 if diag.confidence < floor {
                     self.clear_slot(rule.id());
                     continue;
@@ -196,8 +213,12 @@ impl AnalyzerEngine {
 /// Pull a tick snapshot out of an `AppState` read.
 fn capture_snapshot(st: &AppState, tick: u64) -> TickSnapshot {
     let mut per_syscall_counts = HashMap::new();
+    let mut per_syscall_total_ns = HashMap::new();
+    let mut per_syscall_max_ns = HashMap::new();
     for (k, v) in &st.watch.top_syscalls {
         per_syscall_counts.insert(k.nr, v.count);
+        per_syscall_total_ns.insert(k.nr, v.total_ns);
+        per_syscall_max_ns.insert(k.nr, v.max_ns);
     }
     let cpu_pct = st
         .watch
@@ -205,6 +226,26 @@ fn capture_snapshot(st: &AppState, tick: u64) -> TickSnapshot {
         .back()
         .copied()
         .unwrap_or(0.0);
+    let (rss_kb, majflt, oom_score, sched_run_ns, sched_wait_ns) = st
+        .snap
+        .as_ref()
+        .map(|s| {
+            (
+                s.status.vm_rss_kb,
+                s.stat.majflt,
+                s.oom_score,
+                s.sched_run_ns,
+                s.sched_wait_ns,
+            )
+        })
+        .unwrap_or_default();
+    let lock_max_queue = st
+        .lock
+        .top_locks
+        .iter()
+        .map(|(_, s)| s.max_queue)
+        .max()
+        .unwrap_or(0);
     TickSnapshot {
         tick,
         total_syscalls: st.watch.total_syscalls,
@@ -213,12 +254,17 @@ fn capture_snapshot(st: &AppState, tick: u64) -> TickSnapshot {
         lock_total_waits: st.lock.total_waits,
         cpu_pct,
         per_syscall_counts,
-        // forks / exits not currently split out of AppState — the
-        // consumer merges them into fork/exit event counts. Leave 0
-        // and let rules derive from top_syscalls (clone/exit nr).
+        per_syscall_total_ns,
+        per_syscall_max_ns,
         forks: 0,
         exits: 0,
         cold_entries: st.cold.timeline.len(),
+        rss_kb,
+        majflt,
+        oom_score,
+        sched_run_ns,
+        sched_wait_ns,
+        lock_max_queue,
     }
 }
 

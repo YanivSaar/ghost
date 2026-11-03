@@ -115,6 +115,11 @@ impl Tui {
                                 crate::analyze::Mode::Noisy => crate::analyze::Mode::Quiet,
                             };
                         }
+                        KeyAction::CycleConfidenceFloor => {
+                            // Session-only cycle (persisted to AnalyzerState).
+                            let mut s = state.write().unwrap();
+                            s.analyze.global_floor = cycle_floor(s.analyze.global_floor);
+                        }
                         KeyAction::None => {}
                     },
                     Event::Resize(_, _) => {
@@ -134,6 +139,7 @@ impl Tui {
             }
             (KeyCode::Char('a'), _) => KeyAction::GotoAnalyze,
             (KeyCode::Char('n'), _) => KeyAction::ToggleAnalyzeMode,
+            (KeyCode::Char('f'), _) => KeyAction::CycleConfidenceFloor,
             (KeyCode::Char('v'), _) => {
                 self.dense = !self.dense;
                 KeyAction::None
@@ -162,6 +168,17 @@ enum KeyAction {
     Quit,
     GotoAnalyze,
     ToggleAnalyzeMode,
+    CycleConfidenceFloor,
+}
+
+fn cycle_floor(c: Option<crate::analyze::Confidence>) -> Option<crate::analyze::Confidence> {
+    use crate::analyze::Confidence::*;
+    match c {
+        None => Some(Low),
+        Some(Low) => Some(Medium),
+        Some(Medium) => Some(High),
+        Some(High) => None,
+    }
 }
 
 impl Drop for Tui {

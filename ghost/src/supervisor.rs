@@ -589,8 +589,9 @@ fn proc_poller(target: PidTarget, state: Arc<RwLock<AppState>>, stop: Arc<Atomic
                     st.watch.involuntary_ctx = snap.status.nonvoluntary_ctxt_switches;
                 }
                 st.snap = Some(snap);
-                // Reflect any TUI-driven mode toggle back into the engine.
+                // Reflect any TUI-driven mode / floor toggles back into the engine.
                 engine.set_mode(st.analyze.mode);
+                engine.global_floor = st.analyze.global_floor;
                 // Run analyzer against this tick's state.
                 let mut analyze_out = std::mem::take(&mut st.analyze);
                 engine.tick(&st, &mut analyze_out);
