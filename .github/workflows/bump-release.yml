@@ -1,0 +1,98 @@
+name: Bump + Release
+
+# Single-click release flow. workflow_dispatch takes a bump level, computes
+# the next version from `cargo metadata --no-deps` (same safeguard as the
+# verify-version job in release.yml — see RFC 0008 + the stability-review PR
+# fix), writes Cargo.toml, commits with the project's standard attribution
+# footer, and pushes the tag. The existing release.yml fires on tag push and
+# produces the artifacts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Semver bump: patch | minor | major'
+        required: true
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bump:
+    name: Bump workspace version and tag
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Use the default GITHUB_TOKEN; a release tag push doesn't need
+          # a PAT because release.yml is tag-triggered on the same repo.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust toolchain (pinned nightly, for cargo metadata)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-15
+
+      - name: Compute current + next version
+        id: v
+        run: |
+          # Resolve the ghost package's current version via cargo metadata
+          # rather than a line-order grep on Cargo.toml — a crate-level
+          # [package] above [workspace.package] would silently fool grep.
+          current=$(cargo metadata --format-version=1 --no-deps \
+            | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="ghost"))')
+          level="${{ inputs.level }}"
+          IFS='.' read -r major minor patch <<< "$current"
+          case "$level" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="${major}.$((minor + 1)).0" ;;
+            patch) next="${major}.${minor}.$((patch + 1))" ;;
+            *) echo "::error::unknown level: $level"; exit 1 ;;
+          esac
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next"       >> "$GITHUB_OUTPUT"
+          echo "Bumping $current -> $next ($level)"
+
+      - name: Edit workspace Cargo.toml
+        run: |
+          # The workspace version lives on a single `version = "x.y.z"` line
+          # directly under [workspace.package] in the root Cargo.toml.
+          # Replace only that line; leave crate-local manifests alone (they
+          # use `version.workspace = true`).
+          sed -i -E "s/^version = \"${{ steps.v.outputs.current }}\"$/version = \"${{ steps.v.outputs.next }}\"/" Cargo.toml
+          # Verify metadata now reports the new version so we fail here
+          # rather than during the release pipeline.
+          after=$(cargo metadata --format-version=1 --no-deps \
+            | python3 -c 'import json,sys; m=json.load(sys.stdin); print(next(p["version"] for p in m["packages"] if p["name"]=="ghost"))')
+          if [ "$after" != "${{ steps.v.outputs.next }}" ]; then
+            echo "::error::Cargo.toml edit did not take effect (got $after)"
+            git diff Cargo.toml
+            exit 1
+          fi
+
+      - name: Commit + tag + push
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          next="${{ steps.v.outputs.next }}"
+          git add Cargo.toml
+          git commit -m "release: v${next}" \
+                     -m "" \
+                     -m "Automated bump from the Bump + Release workflow (see RFC 0008)." \
+                     -m "" \
+                     -m "Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>" \
+                     -m "Claude-Session: https://claude.ai/code/session_01V5JFbLt6KLYpqAHCckW49q"
+          git push origin HEAD
+          git tag "v${next}"
+          git push origin "v${next}"
+          echo "Pushed v${next}; the Release workflow fires on tag push."
