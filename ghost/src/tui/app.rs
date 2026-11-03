@@ -37,15 +37,25 @@ impl Tui {
         enable_raw_mode()?;
         let mut stdout = io::stdout();
 
-        let mouse = probe_mouse(&mut stdout);
-
+        // Enter alt screen FIRST, before any probe or render. Otherwise
+        // the mouse-probe escape sequences land on the main screen and
+        // stay visible underneath / after ghost exits.
         execute!(stdout, EnterAlternateScreen)?;
+
+        // Probe mouse support from inside the alt screen so any
+        // response bytes don't pollute the user's shell scrollback.
+        let mouse = probe_mouse(&mut stdout);
         if mouse {
             execute!(stdout, EnableMouseCapture)?;
         }
 
         let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::new(backend)?;
+
+        // Blank the alt screen so the first ratatui draw starts from a
+        // known-clean state (terminals that silently refuse the alt
+        // screen would otherwise bleed previous output through).
+        terminal.clear()?;
 
         Ok(Self {
             terminal,
@@ -134,12 +144,15 @@ impl Tui {
 
 impl Drop for Tui {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        // Reverse order of init: show cursor + disable mouse WHILE the
+        // alt screen is still active, then leave the alt screen (which
+        // restores the main screen), then drop raw mode.
+        let _ = self.terminal.show_cursor();
         if self.mouse {
             let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
         }
-        let _ = self.terminal.show_cursor();
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = disable_raw_mode();
     }
 }
 
