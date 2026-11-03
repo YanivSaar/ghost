@@ -14,6 +14,7 @@ use crate::analyze::{
 use crate::state::AppState;
 use std::collections::VecDeque;
 
+pub mod app;
 pub mod extra;
 
 // ---- syscall-number constants (x86_64 ABI) ----

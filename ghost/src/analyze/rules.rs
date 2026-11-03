@@ -42,6 +42,7 @@ pub fn all_rules() -> &'static [&'static dyn Rule] {
     ALL.get_or_init(|| {
         let mut v: Vec<&'static (dyn Rule + 'static)> = BASE.to_vec();
         v.extend_from_slice(crate::analyze::scenarios::extra::registry());
+        v.extend_from_slice(crate::analyze::scenarios::app::registry());
         v
     })
     .as_slice()
@@ -52,7 +53,7 @@ mod tests {
     use super::*;
     #[test]
     fn registry_lists_fifty_rules() {
-        assert_eq!(all_rules().len(), 12 + 38);
+        assert_eq!(all_rules().len(), 12 + 38 + 210);
     }
     #[test]
     fn ids_are_unique() {
