@@ -209,11 +209,8 @@ fn apply_toml(cfg: &mut AnalyzerConfig, root: &toml::Value) {
             };
             // Find the slot by matching the dynamic key against our
             // static rule ids.
-            let key_static: Option<&'static str> = cfg
-                .rules
-                .keys()
-                .find(|k| **k == rule_id.as_str())
-                .copied();
+            let key_static: Option<&'static str> =
+                cfg.rules.keys().find(|k| **k == rule_id.as_str()).copied();
             let Some(key_static) = key_static else {
                 continue;
             };
@@ -232,8 +229,7 @@ fn apply_toml(cfg: &mut AnalyzerConfig, root: &toml::Value) {
                     }
                     other => {
                         if let Some(f) = v.as_float() {
-                            slot.floats
-                                .insert(static_key_for(other).unwrap_or("_"), f);
+                            slot.floats.insert(static_key_for(other).unwrap_or("_"), f);
                         } else if let Some(i) = v.as_integer() {
                             slot.floats
                                 .insert(static_key_for(other).unwrap_or("_"), i as f64);

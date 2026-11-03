@@ -41,7 +41,9 @@ pub fn run(args: Args) -> Result<()> {
         (Some(path), None) => run_offline(path.clone(), args),
         (None, Some(pid)) => run_live(pid, args),
         _ => {
-            anyhow::bail!("ghost analyze: supply a session file OR --pid <pid> (not both / neither)")
+            anyhow::bail!(
+                "ghost analyze: supply a session file OR --pid <pid> (not both / neither)"
+            )
         }
     }
 }
@@ -203,7 +205,8 @@ impl Emitter {
     }
 
     fn step(&mut self, a: &AnalyzerState, ts_ms: u64) {
-        let now_ids: std::collections::HashSet<&'static str> = a.current.iter().map(|d| d.id).collect();
+        let now_ids: std::collections::HashSet<&'static str> =
+            a.current.iter().map(|d| d.id).collect();
         // begins: in now, not in active
         for d in &a.current {
             if !self.active.contains(d.id) {

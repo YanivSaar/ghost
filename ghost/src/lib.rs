@@ -33,7 +33,10 @@ pub mod tui;
 mod lib_smoke_tests {
     //! RFC 0005: smoke-coverage for pub mod re-exports so every
     //! top-level module path appears in at least one test.
-    use crate::{analyze, caps, ebpf, modes, panic_hook, proc, session, signals, state, supervisor, target, tui};
+    use crate::{
+        analyze, caps, ebpf, modes, panic_hook, proc, session, signals, state, supervisor, target,
+        tui,
+    };
     #[test]
     fn every_top_level_module_is_reachable() {
         // Opaque reference. The resolution itself is the check.

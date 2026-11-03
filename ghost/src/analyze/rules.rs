@@ -1,11 +1,7 @@
 //! Rule trait + registry. Each rule reads `AppState` + its thresholds +
 //! the history ring and returns a `Diagnosis` when its pattern matches.
 
-use crate::analyze::{
-    config::RuleThresholds,
-    engine::TickSnapshot,
-    Diagnosis,
-};
+use crate::analyze::{config::RuleThresholds, engine::TickSnapshot, Diagnosis};
 use crate::state::AppState;
 use std::collections::VecDeque;
 
@@ -38,7 +34,8 @@ pub fn all_rules() -> &'static [&'static dyn Rule] {
         &MMAP_THRASH,
         &ZOMBIE_REAP_DELAY,
     ];
-    static ALL: std::sync::OnceLock<Vec<&'static (dyn Rule + 'static)>> = std::sync::OnceLock::new();
+    static ALL: std::sync::OnceLock<Vec<&'static (dyn Rule + 'static)>> =
+        std::sync::OnceLock::new();
     ALL.get_or_init(|| {
         let mut v: Vec<&'static (dyn Rule + 'static)> = BASE.to_vec();
         v.extend_from_slice(crate::analyze::scenarios::extra::registry());

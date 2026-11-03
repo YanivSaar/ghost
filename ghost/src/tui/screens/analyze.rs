@@ -17,10 +17,10 @@ pub fn render_dense(f: &mut Frame, st: &AppState, ts: &mut TableState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(2), // header
-            Constraint::Min(5),    // current
-            Constraint::Length(10),// history
-            Constraint::Length(1), // keybind bar
+            Constraint::Length(2),  // header
+            Constraint::Min(5),     // current
+            Constraint::Length(10), // history
+            Constraint::Length(1),  // keybind bar
         ])
         .split(area);
     render_header(f, chunks[0], st);
@@ -33,7 +33,11 @@ pub fn render_minimal(f: &mut Frame, st: &AppState, ts: &mut TableState) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(2), Constraint::Min(5), Constraint::Length(1)])
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(1),
+        ])
         .split(area);
     render_header(f, chunks[0], st);
     render_current(f, chunks[1], &st.analyze, ts);
@@ -49,7 +53,10 @@ fn render_header(f: &mut Frame, area: Rect, st: &AppState) {
     let text = Line::from(vec![
         Span::styled(
             " analyze ",
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(format!("  pid {} ({})", st.pid, st.comm)),
         Span::raw(format!("   mode: {}   tick: {}", mode, a.tick)),
@@ -88,9 +95,11 @@ fn render_current(f: &mut Frame, area: Rect, a: &AnalyzerState, ts: &mut TableSt
         Constraint::Length(7),
         Constraint::Min(10),
     ];
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL).title("What's happening"));
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("What's happening"),
+    );
     f.render_stateful_widget(table, area, ts);
 }
 
@@ -121,12 +130,12 @@ fn render_history(f: &mut Frame, area: Rect, a: &AnalyzerState) {
         Constraint::Length(8),
         Constraint::Min(10),
     ];
-    let table = Table::new(rows, widths)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL).title(format!(
+    let table = Table::new(rows, widths).header(header).block(
+        Block::default().borders(Borders::ALL).title(format!(
             "History (last {} entries, 10 min ring)",
             a.history.len()
-        )));
+        )),
+    );
     f.render_widget(table, area);
 }
 

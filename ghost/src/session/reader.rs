@@ -117,10 +117,14 @@ mod tests {
         }
         // Append a fake frame header pointing at a huge body.
         use std::io::Write as _;
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         f.write_all(&[1u8]).unwrap(); // kind
         f.write_all(&0u32.to_le_bytes()).unwrap(); // ts_delta
-        f.write_all(&((MAX_FRAME_LEN + 1) as u32).to_le_bytes()).unwrap();
+        f.write_all(&((MAX_FRAME_LEN + 1) as u32).to_le_bytes())
+            .unwrap();
         drop(f);
         let mut r = SessionReader::open(&path).unwrap();
         assert!(r.next_frame().is_err());

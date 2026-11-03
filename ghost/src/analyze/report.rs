@@ -32,7 +32,14 @@ pub fn plain_report(st: &AnalyzerState) -> String {
     writeln!(&mut out, "{}", st.config_source.status_line()).ok();
     writeln!(&mut out, "-- Current --").ok();
     for d in &st.current {
-        writeln!(&mut out, "  {} [{}]  {}", d.id, d.confidence.label(), d.headline).ok();
+        writeln!(
+            &mut out,
+            "  {} [{}]  {}",
+            d.id,
+            d.confidence.label(),
+            d.headline
+        )
+        .ok();
         if !d.detail.is_empty() {
             writeln!(&mut out, "    {}", d.detail).ok();
         }

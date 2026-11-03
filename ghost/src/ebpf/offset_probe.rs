@@ -30,15 +30,60 @@ pub struct FieldExpect {
 /// The full table ghost expects. Keep in sync with the `ctx.read_at(N)`
 /// call-sites in `ghost-ebpf/src/*.rs` (RFC 0006 Table 1).
 pub const EXPECT: &[FieldExpect] = &[
-    FieldExpect { category: "raw_syscalls", event: "sys_enter", field: "id",        expect_offset: 8 },
-    FieldExpect { category: "raw_syscalls", event: "sys_exit",  field: "id",        expect_offset: 8 },
-    FieldExpect { category: "sched",        event: "sched_switch", field: "prev_pid",  expect_offset: 24 },
-    FieldExpect { category: "sched",        event: "sched_switch", field: "next_pid",  expect_offset: 56 },
-    FieldExpect { category: "sched",        event: "sched_process_fork", field: "parent_pid", expect_offset: 12 },
-    FieldExpect { category: "sched",        event: "sched_process_fork", field: "child_pid",  expect_offset: 20 },
-    FieldExpect { category: "sched",        event: "sched_process_exit", field: "pid",        expect_offset: 24 },
-    FieldExpect { category: "irq",          event: "irq_handler_entry", field: "irq",         expect_offset: 8 },
-    FieldExpect { category: "irq",          event: "softirq_entry",     field: "vec",         expect_offset: 8 },
+    FieldExpect {
+        category: "raw_syscalls",
+        event: "sys_enter",
+        field: "id",
+        expect_offset: 8,
+    },
+    FieldExpect {
+        category: "raw_syscalls",
+        event: "sys_exit",
+        field: "id",
+        expect_offset: 8,
+    },
+    FieldExpect {
+        category: "sched",
+        event: "sched_switch",
+        field: "prev_pid",
+        expect_offset: 24,
+    },
+    FieldExpect {
+        category: "sched",
+        event: "sched_switch",
+        field: "next_pid",
+        expect_offset: 56,
+    },
+    FieldExpect {
+        category: "sched",
+        event: "sched_process_fork",
+        field: "parent_pid",
+        expect_offset: 12,
+    },
+    FieldExpect {
+        category: "sched",
+        event: "sched_process_fork",
+        field: "child_pid",
+        expect_offset: 20,
+    },
+    FieldExpect {
+        category: "sched",
+        event: "sched_process_exit",
+        field: "pid",
+        expect_offset: 24,
+    },
+    FieldExpect {
+        category: "irq",
+        event: "irq_handler_entry",
+        field: "irq",
+        expect_offset: 8,
+    },
+    FieldExpect {
+        category: "irq",
+        event: "softirq_entry",
+        field: "vec",
+        expect_offset: 8,
+    },
 ];
 
 /// Result of one check.
@@ -100,9 +145,7 @@ pub fn report(findings: &[Finding]) -> String {
 }
 
 fn tracefs_path(category: &str, event: &str) -> String {
-    format!(
-        "/sys/kernel/debug/tracing/events/{category}/{event}/format"
-    )
+    format!("/sys/kernel/debug/tracing/events/{category}/{event}/format")
 }
 
 fn read_field_offset(category: &str, event: &str, field: &str) -> std::io::Result<Option<u16>> {

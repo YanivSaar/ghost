@@ -240,7 +240,9 @@ mod tests {
                     (ActiveMode::Jitter, true) => screens::jitter::render_dense(f, &st, &mut ts),
                     (ActiveMode::Jitter, false) => screens::jitter::render_minimal(f, &st, &mut ts),
                     (ActiveMode::Analyze, true) => screens::analyze::render_dense(f, &st, &mut ts),
-                    (ActiveMode::Analyze, false) => screens::analyze::render_minimal(f, &st, &mut ts),
+                    (ActiveMode::Analyze, false) => {
+                        screens::analyze::render_minimal(f, &st, &mut ts)
+                    }
                     (_, true) => screens::overview::render_dense(f, &st, &mut ts),
                     (_, false) => screens::overview::render_minimal(f, &st, &mut ts),
                 })

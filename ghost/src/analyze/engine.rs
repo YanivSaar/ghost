@@ -124,10 +124,7 @@ impl AnalyzerEngine {
             }
 
             // In quiet mode: suppress Low; dedupe within the window.
-            let slot = self
-                .rule_state
-                .entry(rule.id())
-                .or_default();
+            let slot = self.rule_state.entry(rule.id()).or_default();
             if slot.active {
                 slot.consecutive = slot.consecutive.saturating_add(1);
                 slot.last_seen_tick = self.tick;
@@ -220,12 +217,7 @@ fn capture_snapshot(st: &AppState, tick: u64) -> TickSnapshot {
         per_syscall_total_ns.insert(k.nr, v.total_ns);
         per_syscall_max_ns.insert(k.nr, v.max_ns);
     }
-    let cpu_pct = st
-        .watch
-        .cpu_history
-        .back()
-        .copied()
-        .unwrap_or(0.0);
+    let cpu_pct = st.watch.cpu_history.back().copied().unwrap_or(0.0);
     let (rss_kb, majflt, oom_score, sched_run_ns, sched_wait_ns) = st
         .snap
         .as_ref()
