@@ -346,9 +346,7 @@ impl Rule for PossibleDeadlock {
         if hist.len() < quiet_ticks_min + 1 {
             return None;
         }
-        let start = hist.len() - quiet_ticks_min;
-        for i in start..hist.len() {
-            let s = &hist[i];
+        for s in hist.iter().rev().take(quiet_ticks_min) {
             if s.cpu_pct > cpu_max {
                 return None;
             }

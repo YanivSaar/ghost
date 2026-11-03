@@ -13,7 +13,6 @@
 //! TUI/stderr; the caller decides whether to proceed (defensive) or
 //! abort (strict).
 
-use std::collections::HashMap;
 use std::fs;
 
 /// One tracepoint field ghost reads at a fixed offset. The expected

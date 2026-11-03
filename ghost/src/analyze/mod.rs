@@ -35,9 +35,10 @@ pub enum Confidence {
     High,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
+    #[default]
     Quiet,
     Noisy,
 }
@@ -77,12 +78,6 @@ pub struct AnalyzerState {
     /// Session-only confidence floor applied globally; `f` key cycles.
     /// None = no additional floor beyond per-rule config.
     pub global_floor: Option<Confidence>,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Quiet
-    }
 }
 
 /// One finding row for the history pane.

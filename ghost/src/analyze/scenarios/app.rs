@@ -9,7 +9,7 @@
 
 use crate::analyze::{
     config::RuleThresholds, engine::TickSnapshot, identity::identify, rules::Rule, Confidence,
-    Diagnosis, Severity, SignalRef,
+    Diagnosis, Severity,
 };
 use crate::state::AppState;
 use std::collections::VecDeque;
@@ -99,7 +99,7 @@ app_rule!(
     NginxWorkerStarvedRule,
     "nginx_worker_starved",
     "nginx",
-    |st, _th, hist, _tk| {
+    |_st, _th, hist, _tk| {
         let cpu = hist.back().map(|s| s.cpu_pct).unwrap_or(0.0);
         let clones = delta(hist, nr::CLONE) + delta(hist, nr::CLONE3);
         if cpu > 85.0 && clones > 5.0 {

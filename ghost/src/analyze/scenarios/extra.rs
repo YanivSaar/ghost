@@ -229,9 +229,7 @@ rule!(
     NiceDemotionLiveRule,
     "nice_demotion_live",
     |s: &AppState, _th: &RuleThresholds, _h: &VecDeque<TickSnapshot>, _tk: u64| {
-        let Some(snap) = s.snap.as_ref() else {
-            return None;
-        };
+        let snap = s.snap.as_ref()?;
         if snap.stat.nice >= 10 && snap.stat.priority >= 25 {
             Some(blank_diag(
                 "nice_demotion_live",
@@ -303,9 +301,7 @@ rule!(
         const FSYNC: u32 = 74;
         const FDATASYNC: u32 = 75;
         let min_ms = th.get_f("p99_ms_min", 50.0);
-        let Some(last) = hist.back() else {
-            return None;
-        };
+        let last = hist.back()?;
         let max_ns = last
             .per_syscall_max_ns
             .get(&FSYNC)
@@ -769,9 +765,7 @@ rule!(
     SignalBlockedHandlerPendingRule,
     "signal_blocked_handler_pending",
     |st: &AppState, _th: &RuleThresholds, _h: &VecDeque<TickSnapshot>, _tk: u64| {
-        let Some(snap) = st.snap.as_ref() else {
-            return None;
-        };
+        let snap = st.snap.as_ref()?;
         let pnd = u64::from_str_radix(snap.status.sig_pending.trim(), 16).unwrap_or(0);
         let blk = u64::from_str_radix(snap.status.sig_blocked.trim(), 16).unwrap_or(0);
         if pnd & blk != 0 {

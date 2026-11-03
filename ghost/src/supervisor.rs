@@ -547,7 +547,7 @@ fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
             msg.push_str(&crate::caps::remediation_hint());
         }
         if !offset_note.is_empty() {
-            msg.push_str("\n");
+            msg.push('\n');
             msg.push_str(&offset_note);
         }
         anyhow::anyhow!(msg)
