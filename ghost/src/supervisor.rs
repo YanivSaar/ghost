@@ -536,14 +536,21 @@ fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
         // Attach a host-shape-aware remediation hint so the TUI's
         // ebpf_error status line (or an operator reading stderr) can
         // see exactly which capabilities are missing and how to grant
-        // them on this host. The probe is read-only — safe to run
+        // them on this host. The probes are read-only — safe to run
         // from an error path.
         let caps = crate::caps::cap_probe();
+        let offset_findings = crate::ebpf::offset_probe::run();
+        let offset_note = crate::ebpf::offset_probe::report(&offset_findings);
+        let mut msg = format!("{e:#}");
         if !caps.is_sufficient_for_ebpf() {
-            anyhow::anyhow!("{e:#}\n\n{}", crate::caps::remediation_hint())
-        } else {
-            e
+            msg.push_str("\n\n");
+            msg.push_str(&crate::caps::remediation_hint());
         }
+        if !offset_note.is_empty() {
+            msg.push_str("\n");
+            msg.push_str(&offset_note);
+        }
+        anyhow::anyhow!(msg)
     })?;
     ebpf.track_pid(pid)?;
     let mut cfg = Config::default();
