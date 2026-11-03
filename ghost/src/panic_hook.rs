@@ -38,11 +38,15 @@ pub fn install() {
 /// other steps.
 pub fn reset_terminal() {
     let mut stdout = io::stdout();
-    let _ = disable_raw_mode();
-    let _ = execute!(stdout, LeaveAlternateScreen);
-    let _ = execute!(stdout, DisableMouseCapture);
-    // Make the cursor visible — the TUI hid it.
+    // Reverse order of TUI init: show cursor + disable mouse WHILE the
+    // alt screen is still active, then leave the alt screen (which
+    // restores the main screen), then drop raw mode. Doing LeaveAlt
+    // first and emitting cursor/mouse resets afterwards sprays escape
+    // bytes on the user's shell scrollback.
     let _ = execute!(stdout, crossterm::cursor::Show);
+    let _ = execute!(stdout, DisableMouseCapture);
+    let _ = execute!(stdout, LeaveAlternateScreen);
+    let _ = disable_raw_mode();
     let _ = stdout.flush();
 }
 
