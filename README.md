@@ -220,7 +220,37 @@ systemd integration, record/replay/diff, and library surface. CI builds
 `x86_64` and `aarch64` on every push; tag-driven release workflow publishes
 signed tarballs to GitHub Releases.
 
-Current workspace version: see [`Cargo.toml`](Cargo.toml).
+**Current release: `v0.1.12`.** Download prebuilt binaries from the
+[releases page](https://github.com/YanivSaar/ghost/releases/tag/v0.1.12).
+
+### What's new in v0.1.12
+
+- **Fuzz + property + integration test net** (RFC 0005 / #7). `cargo-fuzz`
+  target for the session reader, `proptest` round-trip for
+  `SessionWriter → SessionReader`, 15 modules closed from zero coverage.
+  Test count: 120 → ~180.
+- **Operational readiness** (RFC 0007 / #9). `std::panic::set_hook` restores
+  the terminal before any backtrace; SIGINT / SIGTERM flip the stop
+  `AtomicBool` for clean unwinds; a CAP_BPF / CAP_PERFMON probe reads
+  `/proc/self/status` and emits host-shape-aware remediation hints
+  (bare-metal vs. container).
+- **Supply-chain gates + release automation** (RFC 0008 / #10).
+  `cargo-audit` (CVSS 4.0 aware) and `cargo-deny` (licences / bans /
+  sources) run on every CI pass; rustc nightly pinned to
+  `nightly-2026-10-15`; one-click release workflow via
+  `gh workflow run bump-release.yml`.
+- **Design proposals (merged for review)**. RFC 0001-0008 under
+  [`docs/rfc/`](docs/rfc/) — scenario analyzer base + 12 rules → +38 → +210
+  application-specific rules, plus performance / portability review tracks.
+
+### Platform support
+
+| | |
+|---|---|
+| **MSRV / toolchain** | `rustc nightly-2026-10-15` (pinned via `rust-toolchain.toml`) |
+| **Supported architectures** | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` |
+| **Targeted kernels** | Linux 5.10 / 5.15 / 6.1 / 6.6 / 6.12 — formal matrix verification tracked by RFC 0006 |
+| **Required capabilities** | `CAP_BPF` + `CAP_PERFMON` for eBPF path; `/proc` fallback works unprivileged |
 
 ---
 
