@@ -134,6 +134,9 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
         s
     }));
     let stop = Arc::new(AtomicBool::new(false));
+    if let Err(e) = crate::signals::install_shutdown(&stop) {
+        eprintln!("ghost: signal handler install failed: {e:#}");
+    }
 
     // Open the session sink (if --record was passed).
     let sink: RecordSink = record
@@ -250,6 +253,9 @@ pub fn run_replay(path: String, seek: Option<String>) -> Result<()> {
         s
     }));
     let stop = Arc::new(AtomicBool::new(false));
+    if let Err(e) = crate::signals::install_shutdown(&stop) {
+        eprintln!("ghost: signal handler install failed: {e:#}");
+    }
 
     // Replay thread: iterate frames, respect ts_delta_us (speed = 1x after seek).
     {
@@ -435,6 +441,12 @@ fn run_with_target(
         s
     }));
     let stop = Arc::new(AtomicBool::new(false));
+    // Bridge SIGINT/SIGTERM → stop. Already-ok if the handler is
+    // layered from a previous call-site in the same process (the
+    // installer is idempotent for the AtomicBool target).
+    if let Err(e) = crate::signals::install_shutdown(&stop) {
+        eprintln!("ghost: signal handler install failed: {e:#}");
+    }
 
     // ── try to load eBPF ──────────────────────────────────────────────────────
     let ebpf_result = load_ebpf(pid, catch_threshold_ns);
@@ -519,7 +531,19 @@ fn run_with_target(
 }
 
 fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
-    let mut ebpf = GhostEbpf::load()?;
+    let mut ebpf = GhostEbpf::load().map_err(|e| {
+        // Attach a host-shape-aware remediation hint so the TUI's
+        // ebpf_error status line (or an operator reading stderr) can
+        // see exactly which capabilities are missing and how to grant
+        // them on this host. The probe is read-only — safe to run
+        // from an error path.
+        let caps = crate::caps::cap_probe();
+        if !caps.is_sufficient_for_ebpf() {
+            anyhow::anyhow!("{e:#}\n\n{}", crate::caps::remediation_hint())
+        } else {
+            e
+        }
+    })?;
     ebpf.track_pid(pid)?;
     let mut cfg = Config::default();
     cfg.catch_above_ns = catch_above_ns;

@@ -26,6 +26,9 @@ lz4_flex = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Async-signal-safe SIGINT/SIGTERM → AtomicBool bridge for graceful shutdown.
+signal-hook = { version = "0.3", default-features = false }
+
 [dev-dependencies]
 # Property-based testing for session round-trip + consumer dispatch invariants.
 proptest = { version = "1", default-features = false, features = ["std"] }

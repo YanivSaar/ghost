@@ -9,7 +9,7 @@
 //!
 //! See docs/ARCHITECTURE.md for the full design.
 
-use ghost::{modes, supervisor};
+use ghost::{modes, panic_hook, supervisor};
 
 use clap::{Parser, Subcommand};
 
@@ -93,6 +93,11 @@ pub(crate) fn parse_duration_ns(s: &str) -> Result<u64, String> {
 }
 
 fn main() -> anyhow::Result<()> {
+    // Install the terminal-reset panic hook *before* anything else can
+    // panic. If we die after this point, the user still gets a usable
+    // shell back.
+    panic_hook::install();
+
     let cli = Cli::parse();
 
     match cli.cmd {
