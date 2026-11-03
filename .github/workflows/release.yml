@@ -71,14 +71,14 @@ jobs:
         with:
           toolchain: nightly-2026-10-15
           components: rust-src
+          # bpfel-unknown-none has no prebuilt rust-std; aya_build uses
+          # -Zbuild-std with rust-src for the BPF crate.
+          targets: ${{ matrix.target }}
 
       # aya-build hardcodes `rustup run nightly`; keep the floating alias
       # available alongside the pin. See ci.yml for the full rationale.
       - name: Install floating nightly for aya-build
         run: rustup toolchain install nightly --component rust-src
-          # bpfel-unknown-none has no prebuilt rust-std; aya_build uses
-          # -Zbuild-std with rust-src for the BPF crate.
-          targets: ${{ matrix.target }}
 
       - name: Detect LLVM / bpf-linker versions
         run: ./.github/scripts/detect-versions.sh
