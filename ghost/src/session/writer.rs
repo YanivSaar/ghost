@@ -15,6 +15,7 @@ pub struct SessionWriter {
     out: BufWriter<File>,
     t0: Instant,
     last_ts: u64, // microseconds since session start for delta encoding
+    bytes_written: u64,
 }
 
 impl SessionWriter {
@@ -30,11 +31,22 @@ impl SessionWriter {
         out.write_all(&(meta_bytes.len() as u64).to_le_bytes())?;
         out.write_all(&meta_bytes)?;
 
+        let header_bytes = (MAGIC.len() + 4 + 4 + 8 + meta_bytes.len()) as u64;
+
         Ok(Self {
             out,
             t0: Instant::now(),
             last_ts: 0,
+            bytes_written: header_bytes,
         })
+    }
+
+    /// Approximate bytes written to this writer (header + all frame payloads
+    /// including per-frame kind/delta/len prefix). The BufWriter may still be
+    /// holding some of these in-memory; `flush()` first for an on-disk-tight
+    /// figure. Used by `SessionDirWriter` to drive size-based rotation.
+    pub fn bytes_written(&self) -> u64 {
+        self.bytes_written
     }
 
     /// Write one raw event frame. `kind` is the EventKind discriminant byte.
@@ -50,6 +62,9 @@ impl SessionWriter {
         self.out.write_all(&delta.to_le_bytes())?;
         self.out.write_all(&len.to_le_bytes())?;
         self.out.write_all(&compressed)?;
+        self.bytes_written = self
+            .bytes_written
+            .saturating_add(1 + 4 + 4 + compressed.len() as u64);
         Ok(())
     }
 
