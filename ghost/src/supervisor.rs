@@ -190,7 +190,13 @@ pub fn run_cold(cmd: Vec<String>, record: Option<String>) -> Result<()> {
     }
 
     // Release the child. From this instant the cold timeline is live.
-    handle.resume().context("resuming stopped child")?;
+    // If SIGCONT fails we've already spawned the consumer thread, so
+    // flip `stop` first so it unwinds instead of running against a
+    // never-resumed target.
+    if let Err(e) = handle.resume().context("resuming stopped child") {
+        stop.store(true, Ordering::Relaxed);
+        return Err(e);
+    }
 
     // /proc poller for identity + RSS.
     {
@@ -495,7 +501,6 @@ fn run_with_target(
                 .chain(track_res.errors())
                 .map(|s| s.to_string())
                 .collect();
-            let _ = mode; // mode kept for the TUI's initial view
 
             {
                 let mut st = state.write().unwrap();

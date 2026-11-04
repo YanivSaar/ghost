@@ -1,8 +1,10 @@
 //! Render loop + input (ARCHITECTURE §10).
 //!
-//! Enters raw mode, sets up a Drop guard that restores the terminal on
-//! panic or signal, then drives a ~30 fps render loop. Probes mouse
-//! capability at startup and enables clickable elements only when supported.
+//! Enters raw mode + alt screen, sets up a Drop guard that restores the
+//! terminal on panic or signal, then drives a ~30 fps render loop. Mouse
+//! capture is enabled unconditionally — terminals that don't support it
+//! ignore the escape sequence, and the alt screen keeps the probe bytes
+//! out of the user's scrollback either way.
 
 use std::{
     io::{self, Stdout, Write},
@@ -35,7 +37,6 @@ use crate::{
 
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
-    mouse: bool,
     dense: bool,
     table_state: TableState,
     show_help: bool,
@@ -57,12 +58,12 @@ impl Tui {
         // stay visible underneath / after ghost exits.
         execute!(stdout, EnterAlternateScreen)?;
 
-        // Probe mouse support from inside the alt screen so any
-        // response bytes don't pollute the user's shell scrollback.
-        let mouse = probe_mouse(&mut stdout);
-        if mouse {
-            execute!(stdout, EnableMouseCapture)?;
-        }
+        // Enable mouse capture unconditionally. There's no portable way
+        // to query support — writing the escape succeeds whether or not
+        // the terminal honors it, so an "is_ok" probe would always
+        // return true. Terminals that don't support mouse silently drop
+        // the bytes; the alt screen contains any residue.
+        let _ = execute!(stdout, EnableMouseCapture);
 
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
@@ -74,7 +75,6 @@ impl Tui {
 
         Ok(Self {
             terminal,
-            mouse,
             dense: true,
             table_state: TableState::default(),
             show_help: false,
@@ -161,10 +161,17 @@ impl Tui {
         state: &Arc<RwLock<AppState>>,
         stop: &Arc<std::sync::atomic::AtomicBool>,
     ) -> bool {
+        let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(key.code, KeyCode::Char('c') | KeyCode::Char('C'));
+
         // Help overlay swallows Esc + ? to dismiss.
         if self.show_help {
+            if ctrl_c {
+                stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                return true;
+            }
             match (key.code, key.modifiers) {
-                (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                (KeyCode::Char('q'), _) => {
                     stop.store(true, std::sync::atomic::Ordering::Relaxed);
                     return true;
                 }
@@ -179,8 +186,13 @@ impl Tui {
             return false;
         }
 
+        if ctrl_c {
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            return true;
+        }
+
         match (key.code, key.modifiers) {
-            (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+            (KeyCode::Char('q'), _) => {
                 stop.store(true, std::sync::atomic::Ordering::Relaxed);
                 return true;
             }
@@ -314,9 +326,7 @@ impl Drop for Tui {
         // alt screen is still active, then leave the alt screen (which
         // restores the main screen), then drop raw mode.
         let _ = self.terminal.show_cursor();
-        if self.mouse {
-            let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
-        }
+        let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);
         let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
         let _ = disable_raw_mode();
 
@@ -331,14 +341,6 @@ impl Drop for Tui {
         let _ = execute!(out, Clear(ClearType::All), MoveTo(0, 0));
         let _ = out.flush();
     }
-}
-
-/// Try enabling mouse capture; if the terminal refuses, disable it and carry on.
-fn probe_mouse(stdout: &mut Stdout) -> bool {
-    execute!(stdout, EnableMouseCapture).is_ok()
-        && execute!(stdout, DisableMouseCapture).is_ok()
-        // Re-check: if disable worked, enable is supported.
-        && execute!(stdout, EnableMouseCapture).is_ok()
 }
 
 #[cfg(test)]

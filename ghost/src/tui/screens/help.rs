@@ -53,19 +53,24 @@ pub fn render_overlay(f: &mut Frame) {
     f.render_widget(p, rect);
 }
 
-/// Thin bottom ribbon shown on first startup (dismissed on any key).
+/// Thin bottom ribbon shown on first startup (dismissed on any key or
+/// after a short timeout). Rendered as the LAST row of the frame on top
+/// of the mode-tabs bar — the nudge takes priority for the first few
+/// seconds so new users see "press ? for help" instead of a quiet tab
+/// strip. Only shown when there's at least a tabs row underneath; falls
+/// back silently on tiny terminals.
 pub fn render_nudge(f: &mut Frame) {
     let area = f.area();
-    if area.height < 3 {
+    if area.height < 2 {
         return;
     }
-    let row = area.height.saturating_sub(2);
     let bar = Rect {
         x: 0,
-        y: row,
+        y: area.height.saturating_sub(1),
         width: area.width,
         height: 1,
     };
+    f.render_widget(Clear, bar);
     let text = Line::from(vec![Span::styled(
         " press ? for help  —  w s l t j a to switch view ",
         Style::default()

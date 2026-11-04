@@ -9,7 +9,6 @@ use ratatui::{
     Frame,
 };
 
-use super::super::widgets;
 use crate::state::AppState;
 
 pub fn render_dense(f: &mut Frame, state: &AppState, table_state: &mut TableState) {
@@ -27,7 +26,6 @@ pub fn render_dense(f: &mut Frame, state: &AppState, table_state: &mut TableStat
     render_header(f, chunks[0], state);
     render_totals(f, chunks[1], state);
     render_lock_table(f, chunks[2], state, table_state);
-    render_keybind_bar(f, chunks[3], state);
 }
 
 pub fn render_minimal(f: &mut Frame, state: &AppState, table_state: &mut TableState) {
@@ -43,7 +41,6 @@ pub fn render_minimal(f: &mut Frame, state: &AppState, table_state: &mut TableSt
 
     render_header(f, chunks[0], state);
     render_lock_table(f, chunks[1], state, table_state);
-    render_keybind_bar(f, chunks[2], state);
 }
 
 // ── sub-renderers ─────────────────────────────────────────────────────────
@@ -187,18 +184,4 @@ fn render_lock_table(f: &mut Frame, area: Rect, state: &AppState, ts: &mut Table
     .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     f.render_stateful_widget(table, area, ts);
-}
-
-fn render_keybind_bar(f: &mut Frame, area: Rect, state: &AppState) {
-    let ebpf_err = state.ebpf_error.as_deref().unwrap_or("");
-    let err_span = if !ebpf_err.is_empty() {
-        Span::styled(format!("  {ebpf_err}"), Style::default().fg(Color::Red))
-    } else {
-        Span::raw("")
-    };
-    widgets::status_bar(
-        f,
-        area,
-        vec![Span::raw("  q:quit  v:toggle-view  ↑↓:scroll"), err_span],
-    );
 }

@@ -6,14 +6,14 @@
 
 use crate::analyze::AnalyzerState;
 use crate::proc::ProcSnapshot;
-use ghost_common::{ColdStat, IrqStat, LockStat, SyscallKey, SyscallStat};
+use ghost_common::{IrqStat, LockStat, SyscallKey, SyscallStat};
 use std::collections::VecDeque;
 
 /// Max hits retained in CatchLensState.recent_hits (newest first).
 pub const CATCH_RING_CAP: usize = 200;
 
-/// System-clock name captured at session start.
-pub const HISTORY_DEPTH: usize = 60; // seconds of CPU% history
+/// Seconds of CPU% history retained in WatchState.cpu_history.
+pub const HISTORY_DEPTH: usize = 60;
 
 #[derive(Debug)]
 pub struct AppState {
@@ -165,11 +165,6 @@ impl AppState {
         }
     }
 }
-
-/// Suppress unused-import warning when ColdStat lands here only as a type
-/// reference in future consumer code.
-#[allow(dead_code)]
-fn _cold_stat_type_check(_s: ColdStat) {}
 
 #[cfg(test)]
 mod tests {
