@@ -1,0 +1,34 @@
+# ghost persistent watcher — systemd unit template.
+#
+# This is the shape of the unit `ghost --install` writes to
+# /etc/systemd/system/ghost@<slug>.service. Kept here for reference /
+# packaging; the installer renders it in Rust (see ghost/src/modes/daemon.rs
+# `render_unit`) because ExecStart has to be an absolute path to the actual
+# installed binary.
+#
+# Placeholders:
+#   @BIN@   absolute path to the ghost binary (e.g. /usr/local/bin/ghost)
+#   @CFG@   absolute path to the generated per-target config
+#   @SLUG@  short filesystem-safe name for the target
+
+[Unit]
+Description=ghost persistent watcher (@SLUG@)
+Documentation=https://github.com/YanivSaar/ghost
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=@BIN@ daemon --config @CFG@
+Restart=on-failure
+RestartSec=5s
+AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_SYS_PTRACE
+CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_SYS_PTRACE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/ghost
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -29,6 +29,61 @@ struct Cli {
     /// Tee the raw event stream to a .ghost session file.
     #[arg(long, global = true)]
     record: Option<String>,
+
+    /// Install the persistent watcher as a systemd service for the given
+    /// target. Requires one of `--pid / --tree / --cgroup / --unit`.
+    /// See `docs/DAEMON.md`.
+    #[arg(long, conflicts_with = "uninstall")]
+    install: bool,
+
+    /// Tear down an installed ghost daemon. Without a target, removes every
+    /// installed `ghost@*.service`. With `--purge`, also deletes the rotated
+    /// log directory.
+    #[arg(long)]
+    uninstall: bool,
+
+    /// Also delete `/var/log/ghost/<slug>/` on `--uninstall`. User data —
+    /// off by default.
+    #[arg(long, requires = "uninstall")]
+    purge: bool,
+
+    /// Print what install/uninstall would do without touching the system.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Skip `systemctl` invocation on install/uninstall (e.g. WSL2 /
+    /// containers / sandbox tests). Files are still written / removed.
+    #[arg(long)]
+    no_systemctl: bool,
+
+    /// Target for `--install` / `--uninstall`: a PID.
+    #[arg(long = "pid", group = "daemon_target")]
+    daemon_pid: Option<u32>,
+
+    /// Target for `--install` / `--uninstall`: a PID tree root.
+    #[arg(long = "tree", group = "daemon_target")]
+    daemon_tree: Option<u32>,
+
+    /// Target for `--install` / `--uninstall`: a cgroup path.
+    #[arg(long = "cgroup", group = "daemon_target")]
+    daemon_cgroup: Option<String>,
+
+    /// Target for `--install` / `--uninstall`: a systemd unit name.
+    #[arg(long = "unit", group = "daemon_target")]
+    daemon_unit: Option<String>,
+
+    /// Rotation: max bytes per segment (default 100 MiB).
+    #[arg(long, default_value_t = 100 * 1024 * 1024)]
+    max_segment_bytes: u64,
+
+    /// Rotation: keep this many rotated segments (default 10).
+    #[arg(long, default_value_t = 10)]
+    keep_segments: usize,
+
+    /// Rotation: rotate after this many seconds, even if under size cap
+    /// (default 86400 = 24h).
+    #[arg(long, default_value_t = 24 * 60 * 60)]
+    max_age_secs: u64,
 }
 
 #[derive(Subcommand, Debug)]
@@ -61,6 +116,30 @@ enum Cmd {
     },
     /// Compare two recorded sessions.
     Diff { a: String, b: String },
+    /// Run as a persistent headless watcher. Invoked by the installed
+    /// systemd unit; pass `--config` to point at the generated daemon.toml.
+    /// You can also pass a target spec directly for ad-hoc runs.
+    Daemon {
+        #[arg(long)]
+        config: Option<String>,
+        #[arg(long)]
+        pid: Option<u32>,
+        #[arg(long)]
+        tree: Option<u32>,
+        #[arg(long)]
+        cgroup: Option<String>,
+        #[arg(long)]
+        unit: Option<String>,
+        /// Log dir override (ad-hoc; ignored when `--config` is passed).
+        #[arg(long)]
+        log_dir: Option<String>,
+        #[arg(long, default_value_t = 100 * 1024 * 1024)]
+        max_segment_bytes: u64,
+        #[arg(long, default_value_t = 10)]
+        keep_segments: usize,
+        #[arg(long, default_value_t = 24 * 60 * 60)]
+        max_age_secs: u64,
+    },
     /// Scenario analyzer (RFC 0001): offline over a session file, or
     /// one-shot live via --pid + --duration.
     Analyze {
@@ -124,6 +203,13 @@ fn main() -> anyhow::Result<()> {
 
     let cli = Cli::parse();
 
+    // Top-level install/uninstall shortcuts: these don't attach, they just
+    // write (or remove) the systemd unit + config. They're mutually exclusive
+    // with any subcommand (enforced by clap).
+    if cli.install || cli.uninstall {
+        return handle_install_uninstall(&cli);
+    }
+
     match cli.cmd {
         Some(Cmd::Snap { pid }) => modes::snap::run(pid),
         None => {
@@ -153,6 +239,47 @@ fn main() -> anyhow::Result<()> {
         Some(Cmd::Jitter { pid }) => supervisor::run_jitter(pid, cli.record),
         Some(Cmd::Replay { file, seek }) => supervisor::run_replay(file, seek),
         Some(Cmd::Diff { a, b }) => supervisor::run_diff(a, b),
+        Some(Cmd::Daemon {
+            config,
+            pid,
+            tree,
+            cgroup,
+            unit,
+            log_dir,
+            max_segment_bytes,
+            keep_segments,
+            max_age_secs,
+        }) => {
+            use ghost::modes::daemon::DaemonConfig;
+            use ghost::session::dir_writer::RotationConfig;
+            use std::time::Duration;
+
+            let cfg = if let Some(path) = config {
+                let s = std::fs::read_to_string(&path)
+                    .map_err(|e| anyhow::anyhow!("reading {path}: {e}"))?;
+                DaemonConfig::from_toml(&s)?
+            } else {
+                let target = pick_target(pid, tree, cgroup, unit)
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "ghost daemon: supply --config OR exactly one of --pid/--tree/--cgroup/--unit",
+                    ))?;
+                let slug = target.slug();
+                let log_dir = log_dir.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                    let layout = ghost::modes::daemon::Layout::resolve();
+                    layout.log_dir.join(slug)
+                });
+                DaemonConfig {
+                    target,
+                    log_dir,
+                    rotation: RotationConfig {
+                        max_segment_bytes,
+                        keep_segments,
+                        max_age: Duration::from_secs(max_age_secs),
+                    },
+                }
+            };
+            ghost::modes::daemon::run(cfg)
+        }
         Some(Cmd::Analyze {
             file,
             pid,
@@ -186,6 +313,72 @@ fn main() -> anyhow::Result<()> {
                 config,
             })
         }
+    }
+}
+
+fn pick_target(
+    pid: Option<u32>,
+    tree: Option<u32>,
+    cgroup: Option<String>,
+    unit: Option<String>,
+) -> Option<ghost::modes::daemon::DaemonTarget> {
+    use ghost::modes::daemon::DaemonTarget;
+    match (pid, tree, cgroup, unit) {
+        (Some(p), None, None, None) => Some(DaemonTarget::Pid(p)),
+        (None, Some(p), None, None) => Some(DaemonTarget::Tree(p)),
+        (None, None, Some(c), None) => Some(DaemonTarget::Cgroup(c)),
+        (None, None, None, Some(u)) => Some(DaemonTarget::Unit(u)),
+        _ => None,
+    }
+}
+
+fn handle_install_uninstall(cli: &Cli) -> anyhow::Result<()> {
+    use ghost::modes::daemon::{install, uninstall, InstallArgs, UninstallArgs};
+    use ghost::session::dir_writer::RotationConfig;
+    use std::time::Duration;
+
+    let target = pick_target(
+        cli.daemon_pid,
+        cli.daemon_tree,
+        cli.daemon_cgroup.clone(),
+        cli.daemon_unit.clone(),
+    );
+
+    if cli.install {
+        let target = target.ok_or_else(|| {
+            anyhow::anyhow!(
+                "ghost --install: pass one of --pid N | --tree N | --cgroup PATH | --unit NAME",
+            )
+        })?;
+        let args = InstallArgs {
+            target,
+            rotation: RotationConfig {
+                max_segment_bytes: cli.max_segment_bytes,
+                keep_segments: cli.keep_segments,
+                max_age: Duration::from_secs(cli.max_age_secs),
+            },
+            dry_run: cli.dry_run,
+            no_systemctl: cli.no_systemctl,
+        };
+        let name = install(args)?;
+        eprintln!("ghost: installed {name}");
+        Ok(())
+    } else {
+        let args = UninstallArgs {
+            target,
+            purge_logs: cli.purge,
+            dry_run: cli.dry_run,
+            no_systemctl: cli.no_systemctl,
+        };
+        let removed = uninstall(args)?;
+        if removed.is_empty() {
+            eprintln!("ghost: no daemon units found to remove");
+        } else {
+            for s in removed {
+                eprintln!("ghost: removed {s}");
+            }
+        }
+        Ok(())
     }
 }
 

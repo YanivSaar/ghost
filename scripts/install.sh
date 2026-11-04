@@ -141,3 +141,4 @@ else
 fi
 
 say "Done. Try:  ghost --help"
+say "Persistent watcher? See docs/DAEMON.md, or: sudo ghost --install --pid <PID>"
