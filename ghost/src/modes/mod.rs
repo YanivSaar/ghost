@@ -3,6 +3,7 @@
 pub mod analyze;
 pub mod catch;
 pub mod cold;
+pub mod daemon;
 pub mod jitter;
 pub mod lock;
 pub mod mode;

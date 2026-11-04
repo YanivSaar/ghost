@@ -424,6 +424,106 @@ fn run_with_mode(
     run_with_target(pid, record, mode, catch_threshold_ns, vec![], None, 1)
 }
 
+/// Headless pipeline: attach eBPF (if available) + /proc poller to the given
+/// target, teeing frames into `sink`, and block until `stop` is set (by
+/// SIGINT/SIGTERM or the target exiting). No TUI, no interactive state.
+///
+/// Used by `ghost daemon` to feed a `SessionDirWriter`. The caller owns the
+/// `stop` flag (which is also registered against SIGINT/SIGTERM here) and
+/// is responsible for flushing any wrapping writer after this returns.
+pub fn run_headless(
+    pid: u32,
+    sink: RecordSink,
+    extra_pids: Vec<u32>,
+    target_label: Option<String>,
+    tracked_count: usize,
+    stop: Arc<AtomicBool>,
+) -> Result<()> {
+    let target = PidTarget::attach(pid)?;
+    let comm = crate::proc::stat::Stat::read(pid)
+        .map(|s| s.comm.clone())
+        .unwrap_or_else(|_| "?".into());
+
+    let state = Arc::new(RwLock::new({
+        let mut s = AppState::new(pid, comm.clone());
+        s.mode = ActiveMode::Watch;
+        s.catch.threshold_ns = 10_000_000;
+        s.target_label = target_label;
+        s.tracked_count = tracked_count.max(1);
+        s
+    }));
+    if let Err(e) = crate::signals::install_shutdown(&stop) {
+        eprintln!("ghost: signal handler install failed: {e:#}");
+    }
+
+    match load_ebpf(pid, 0) {
+        Ok(mut ebpf) => {
+            if !extra_pids.is_empty() {
+                if let Err(e) = ebpf.track_pids(&extra_pids, pid) {
+                    eprintln!("ghost: seeding extra pids failed: {e}");
+                }
+            }
+            let watch_res = ebpf.attach_watch();
+            let lock_res = ebpf.attach_lock();
+            let catch_res = ebpf.attach_catch();
+            let jitter_res = ebpf.attach_jitter();
+            let track_res = ebpf.attach_track();
+            let errors: Vec<_> = watch_res
+                .errors()
+                .into_iter()
+                .chain(lock_res.errors())
+                .chain(catch_res.errors())
+                .chain(jitter_res.errors())
+                .chain(track_res.errors())
+                .map(|s| s.to_string())
+                .collect();
+            {
+                let mut st = state.write().unwrap();
+                st.ebpf_ok = errors.is_empty();
+                st.ebpf_error = if errors.is_empty() {
+                    None
+                } else {
+                    Some(errors.join("; "))
+                };
+            }
+            let state_c = Arc::clone(&state);
+            let stop_c = Arc::clone(&stop);
+            let sink_c = sink.clone();
+            std::thread::spawn(move || {
+                crate::ebpf::consumer::run(ebpf, state_c, stop_c, sink_c);
+            });
+        }
+        Err(e) => {
+            eprintln!("ghost daemon: eBPF unavailable: {e}");
+        }
+    }
+
+    {
+        let state_p = Arc::clone(&state);
+        let stop_p = Arc::clone(&stop);
+        let target_p = PidTarget {
+            pid: target.pid,
+            start_time: target.start_time,
+        };
+        std::thread::spawn(move || proc_poller(target_p, state_p, stop_p));
+    }
+
+    // Block until signal or target exit. Target liveness is already written
+    // into state.target_gone by the proc poller; mirror that into stop.
+    while !stop.load(Ordering::Relaxed) {
+        if state.read().unwrap().target_gone {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    stop.store(true, Ordering::Relaxed);
+    std::thread::sleep(Duration::from_millis(100));
+    if let Some(w) = &sink {
+        let _ = w.lock().unwrap().flush();
+    }
+    Ok(())
+}
+
 fn run_with_target(
     pid: u32,
     record: Option<String>,
