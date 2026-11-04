@@ -43,8 +43,10 @@ The analyzer pipeline, release automation, and supply-chain gates are tracked in
 - **PID-reuse safe.** Start-time-anchored target identity.
 - **Dual TUI aesthetic.** `dense` (default) and `minimal`, toggle at runtime
   with `v`.
-- **No daemon.** No background service, no setuid; capabilities on the binary
-  only when you want the kernel-side features.
+- **Attach ad-hoc, or run persistently.** Default is a one-shot attach — no
+  background service, no setuid. Opt into a long-running headless watcher
+  with `ghost --install` (systemd unit + rotated `.ghost` segments on disk;
+  details in [`docs/DAEMON.md`](docs/DAEMON.md)).
 
 ---
 
@@ -235,8 +237,26 @@ systemd integration, record/replay/diff, and library surface. CI builds
 `x86_64` and `aarch64` on every push; tag-driven release workflow publishes
 signed tarballs to GitHub Releases.
 
-**Current release: `v0.1.12`.** Download prebuilt binaries from the
-[releases page](https://github.com/YanivSaar/ghost/releases/tag/v0.1.12).
+**Current release: `v0.11.0`.** Download prebuilt binaries from the
+[releases page](https://github.com/YanivSaar/ghost/releases/tag/v0.11.0).
+
+### What's new in v0.11.0
+
+- **Persistent watcher / daemon mode.** `ghost --install --pid N` (or
+  `--tree`, `--cgroup`, `--unit`) writes a systemd unit + config and
+  enables it; `ghost --uninstall [--purge]` tears it down completely.
+  The service calls `ghost daemon --config …`, which attaches headless
+  to the target and writes rotated `.ghost` segments under
+  `/var/log/ghost/<slug>/`. Each segment is a standalone session file —
+  `ghost replay <segment>.ghost` works on any one. See
+  [`docs/DAEMON.md`](docs/DAEMON.md).
+- **In-process log rotation.** `SessionDirWriter` enforces size + age
+  caps and segment-count retention from inside ghost (no logrotate on a
+  live writer); defaults 100 MiB per segment, keep 10, max age 24h —
+  all overridable at install time.
+- **`run_headless` supervisor path.** The eBPF consumer + /proc poller
+  pipeline is now reachable without the TUI, so other tools can embed
+  the watcher.
 
 ### What's new in v0.1.12
 
