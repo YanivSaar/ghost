@@ -12,9 +12,10 @@
 //! wasn't enabled is a no-op, same for the other primitives.
 
 use crossterm::{
+    cursor::MoveTo,
     event::DisableMouseCapture,
     execute,
-    terminal::{disable_raw_mode, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, Clear, ClearType, LeaveAlternateScreen},
 };
 use std::io::{self, Write};
 use std::sync::Once;
@@ -47,6 +48,12 @@ pub fn reset_terminal() {
     let _ = execute!(stdout, DisableMouseCapture);
     let _ = execute!(stdout, LeaveAlternateScreen);
     let _ = disable_raw_mode();
+    // Belt-and-braces for terminals (WSL / Windows Terminal defaults
+    // and some tmux configs) that silently no-op `EnterAlternateScreen`
+    // and therefore `LeaveAlternateScreen`. Clearing + homing wipes any
+    // residual TUI content from the main buffer so the shell prompt
+    // lands on a clean row instead of inside our status line.
+    let _ = execute!(stdout, Clear(ClearType::All), MoveTo(0, 0));
     let _ = stdout.flush();
 }
 

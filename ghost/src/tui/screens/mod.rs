@@ -3,6 +3,8 @@
 pub mod analyze;
 pub mod catch;
 pub mod cold;
+pub mod help;
 pub mod jitter;
 pub mod lock;
 pub mod overview;
+pub mod snap;

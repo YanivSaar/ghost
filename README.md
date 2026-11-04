@@ -59,6 +59,21 @@ The analyzer pipeline, release automation, and supply-chain gates are tracked in
 | `cold`   | Where did the 800 ms of startup go?                        | yes  | `cap_bpf,cap_perfmon,cap_sys_ptrace`     |
 | `jitter` | What steals microseconds from my realtime thread?          | yes  | `cap_bpf,cap_perfmon`                    |
 
+Once attached (`ghost <pid>`) you pivot between lenses from inside the
+TUI — no re-attach, no second invocation:
+
+| key | view | key | view |
+|---|---|---|---|
+| `w` | watch   | `t` | catch (tripwire) |
+| `s` | snap    | `j` | jitter           |
+| `l` | lock    | `a` | analyze          |
+
+Press `?` (or `F1`) for the full keybind cheatsheet, including analyze
+mode toggles (`n` noisy/quiet, `f` cycle confidence floor), catch
+threshold tuning (`+` / `-`), and dense/minimal view (`v`). Mouse
+clicks on the footer tab bar also switch views; scroll wheel scrolls
+tables. `q` or `Ctrl+C` quits.
+
 ---
 
 ## Install

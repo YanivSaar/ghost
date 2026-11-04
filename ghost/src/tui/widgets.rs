@@ -4,9 +4,83 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Cell, Row, Sparkline, Table, TableState},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Sparkline, Table, TableState},
     Frame,
 };
+
+use crate::state::ActiveMode;
+
+/// Hit region emitted by `mode_tabs` so the mouse handler in `Tui`
+/// can map a click back to a mode switch without the widget itself
+/// knowing about input routing.
+#[derive(Debug, Clone, Copy)]
+pub struct ModeTabHit {
+    pub mode: ActiveMode,
+    pub row: u16,
+    pub col_start: u16,
+    pub col_end: u16,
+}
+
+/// Render the shared "pick a view" tab bar at the bottom of the
+/// frame. Returns the hit regions for mouse-click routing. The current
+/// mode is rendered inverted so it reads as "selected".
+pub fn mode_tabs(f: &mut Frame, current: ActiveMode) -> Vec<ModeTabHit> {
+    let area = f.area();
+    if area.height < 2 {
+        return Vec::new();
+    }
+    let row = area.height.saturating_sub(1);
+    let bar = Rect {
+        x: 0,
+        y: row,
+        width: area.width,
+        height: 1,
+    };
+
+    // (mode, key, short label). Cold is hidden — it's spawn-only.
+    let entries: &[(ActiveMode, &str, &str)] = &[
+        (ActiveMode::Watch, "w", "watch"),
+        (ActiveMode::Snap, "s", "snap"),
+        (ActiveMode::Lock, "l", "lock"),
+        (ActiveMode::Catch, "t", "catch"),
+        (ActiveMode::Jitter, "j", "jitter"),
+        (ActiveMode::Analyze, "a", "analyze"),
+    ];
+    let mut spans: Vec<Span> = Vec::with_capacity(entries.len() * 3);
+    let mut hits: Vec<ModeTabHit> = Vec::with_capacity(entries.len());
+    let mut col: u16 = 0;
+    for (mode, key, label) in entries {
+        // Each tab is " [k]label " ; selected tab inverted.
+        let text = format!(" [{key}]{label} ");
+        let width = text.chars().count() as u16;
+        let style = if *mode == current {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White).bg(Color::DarkGray)
+        };
+        spans.push(Span::styled(text, style));
+        spans.push(Span::raw(" "));
+        hits.push(ModeTabHit {
+            mode: *mode,
+            row,
+            col_start: col,
+            col_end: col + width,
+        });
+        col += width + 1;
+    }
+    // Right-hand hint for help.
+    spans.push(Span::styled(
+        "  ?:help  q:quit",
+        Style::default().fg(Color::DarkGray),
+    ));
+
+    let p = Paragraph::new(Line::from(spans));
+    f.render_widget(p, bar);
+    hits
+}
 
 /// Render a CPU% sparkline in `area`. `history` is newest-last.
 pub fn cpu_sparkline(f: &mut Frame, area: Rect, history: &[f32], title: &str) {

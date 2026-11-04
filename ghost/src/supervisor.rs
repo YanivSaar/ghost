@@ -436,7 +436,14 @@ fn run_with_target(
     let state = Arc::new(RwLock::new({
         let mut s = AppState::new(pid, comm.clone());
         s.mode = mode;
-        s.catch.threshold_ns = catch_threshold_ns;
+        // Mirror the kernel-side default (10 ms when the user didn't
+        // pass `--above` explicitly) so the TUI header renders the live
+        // threshold.
+        s.catch.threshold_ns = if catch_threshold_ns > 0 {
+            catch_threshold_ns
+        } else {
+            10_000_000
+        };
         s.target_label = target_label;
         s.tracked_count = tracked_count.max(1);
         s
@@ -466,23 +473,29 @@ fn run_with_target(
                     eprintln!("ghost: seeding extra pids failed: {e}");
                 }
             }
-            // Attach probes needed for the active mode. Lock mode needs futex
-            // tracepoints; watch mode needs the sys_enter/exit + sched_switch
-            // set. Track probes (fork/exit) are always useful.
-            let probe_res = match mode {
-                ActiveMode::Lock => ebpf.attach_lock(),
-                ActiveMode::Catch => ebpf.attach_catch(),
-                ActiveMode::Jitter => ebpf.attach_jitter(),
-                _ => ebpf.attach_watch(),
-            };
+            // Attach ALL live-view probes (not just the one the subcommand
+            // picked), so the user can pivot between watch / lock / catch /
+            // jitter / analyze from inside the TUI with `w` / `l` / `t` /
+            // `j` / `a` without re-attaching. Each program is independent;
+            // multi-attach on shared tracepoints like `raw_syscalls/sys_enter`
+            // runs each handler in sequence. Cold stays out because it's
+            // a spawn-time lens, not an attach.
+            let watch_res = ebpf.attach_watch();
+            let lock_res = ebpf.attach_lock();
+            let catch_res = ebpf.attach_catch();
+            let jitter_res = ebpf.attach_jitter();
             let track_res = ebpf.attach_track();
 
-            let errors: Vec<_> = probe_res
+            let errors: Vec<_> = watch_res
                 .errors()
                 .into_iter()
+                .chain(lock_res.errors())
+                .chain(catch_res.errors())
+                .chain(jitter_res.errors())
                 .chain(track_res.errors())
                 .map(|s| s.to_string())
                 .collect();
+            let _ = mode; // mode kept for the TUI's initial view
 
             {
                 let mut st = state.write().unwrap();
@@ -554,7 +567,15 @@ fn load_ebpf(pid: u32, catch_above_ns: u64) -> Result<GhostEbpf> {
     })?;
     ebpf.track_pid(pid)?;
     let mut cfg = Config::default();
-    cfg.catch_above_ns = catch_above_ns;
+    // With the attach-all change the catch probe is loaded even for
+    // `ghost <pid>` (default Watch). Seed a 10 ms floor so switching
+    // to the catch view from inside the TUI fires on something; the
+    // explicit `ghost catch --above <d>` subcommand still wins.
+    cfg.catch_above_ns = if catch_above_ns > 0 {
+        catch_above_ns
+    } else {
+        10_000_000
+    };
     ebpf.set_config(cfg)?;
     Ok(ebpf)
 }
